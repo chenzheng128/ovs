@@ -465,7 +465,18 @@ enum ofperr ofputil_decode_packet_out(struct ofputil_packet_out *,
                                       struct ofpbuf *ofpacts);
 struct ofpbuf *ofputil_encode_packet_out(const struct ofputil_packet_out *,
                                          enum ofputil_protocol protocol);
+struct ofputil_queue_rate_zero {
+    uint32_t queue_id;
+    uint32_t rate;
+    uint8_t net[8];          
+};
 
+enum ofperr
+ofputil_decode_queue_rate_zero(const struct ofp_header *oh,
+                                   struct ofputil_queue_rate_zero *oqrz);
+struct ofpbuf *
+ofputil_encode_queue_rate_zero(enum ofp_version ofp_version,
+                                   const struct ofputil_queue_rate_zero *oqrz);
 enum ofputil_port_config {
     /* OpenFlow 1.0 and 1.1 share these values for these port config bits. */
     OFPUTIL_PC_PORT_DOWN    = 1 << 0, /* Port is administratively down. */
@@ -955,6 +966,8 @@ struct ofpbuf *
 ofputil_encode_queue_stats_request(enum ofp_version ofp_version,
                                    const struct ofputil_queue_stats_request *oqsr);
 
+
+
 struct ofputil_queue_stats {
     ofp_port_t port_no;
     uint32_t queue_id;
@@ -962,6 +975,7 @@ struct ofputil_queue_stats {
     /* Values of unsupported statistics are set to all-1-bits (UINT64_MAX). */
     uint64_t tx_bytes;
     uint64_t tx_packets;
+    uint64_t left_packets;
     uint64_t tx_errors;
 
     /* UINT32_MAX if unknown. */

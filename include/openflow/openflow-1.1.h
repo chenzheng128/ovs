@@ -547,14 +547,17 @@ struct ofp11_queue_stats_request {
 };
 OFP_ASSERT(sizeof(struct ofp11_queue_stats_request) == 8);
 
+
+
 struct ofp11_queue_stats {
     ovs_be32 port_no;
     ovs_be32 queue_id;         /* Queue id. */
     ovs_be64 tx_bytes;         /* Number of transmitted bytes. */
     ovs_be64 tx_packets;       /* Number of transmitted packets. */
+    ovs_be64 left_packets;       /* Number of left packets. */
     ovs_be64 tx_errors;        /* # of packets dropped due to overrun. */
 };
-OFP_ASSERT(sizeof(struct ofp11_queue_stats) == 32);
+OFP_ASSERT(sizeof(struct ofp11_queue_stats) == 40);
 
 struct ofp11_group_stats_request {
     ovs_be32 group_id;         /* All groups if OFPG_ALL. */
@@ -605,6 +608,13 @@ struct ofp11_packet_out {
                                  (Only meaningful if buffer_id == -1.) */
 };
 OFP_ASSERT(sizeof(struct ofp11_packet_out) == 16);
+
+struct ofp11_queue_rate_zero {
+    ovs_be32 queue_id;        /* All queues if OFPQ_ALL. */
+    ovs_be32 rate;       /*  queues rate. */
+    uint8_t net[8];            /* Align to 64 bits. */
+};
+OFP_ASSERT(sizeof(struct ofp11_queue_rate_zero) == 16);
 
 /* Packet received on port (datapath -> controller). */
 struct ofp11_packet_in {

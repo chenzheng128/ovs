@@ -355,7 +355,7 @@ struct ofp13_queue_stats {
     ovs_be32 duration_nsec;   /* Time queue has been alive in nanoseconds
                                  beyond duration_sec. */
 };
-OFP_ASSERT(sizeof(struct ofp13_queue_stats) == 40);
+OFP_ASSERT(sizeof(struct ofp13_queue_stats) == 48);
 
 /* Body of reply to OFPMP13_GROUP request */
 struct ofp13_group_stats {

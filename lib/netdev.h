@@ -276,6 +276,7 @@ struct netdev_queue_stats {
     /* Values of unsupported statistics are set to all-1-bits (UINT64_MAX). */
     uint64_t tx_bytes;
     uint64_t tx_packets;
+    uint64_t left_packets;  // (CUC) queue left_packets
     uint64_t tx_errors;
 
     /* Time at which the queue was created, in msecs, LLONG_MIN if unknown. */

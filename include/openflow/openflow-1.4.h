@@ -215,7 +215,7 @@ struct ofp14_queue_stats {
     struct ofp13_queue_stats qs;
     /* Followed by 0 or more properties (none yet defined). */
 };
-OFP_ASSERT(sizeof(struct ofp14_queue_stats) == 48);
+OFP_ASSERT(sizeof(struct ofp14_queue_stats) == 56);
 
 
 /* ## -------------- ## */

@@ -79,7 +79,6 @@
 \bsigprocmask(
 \bstrerror(
 \bstrsignal(
-\bstrtok(
 \bsystem(
 \btmpnam(
 \bttyname(

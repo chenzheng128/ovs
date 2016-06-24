@@ -23,6 +23,8 @@
 #include <netinet/in.h>
 #include <netinet/icmp6.h>
 #include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
 #include "bundle.h"
 #include "byte-order.h"
 #include "classifier.h"
@@ -5888,6 +5890,84 @@ ofputil_encode_packet_out(const struct ofputil_packet_out *po,
 
     return msg;
 }
+
+enum ofperr
+ofputil_decode_queue_rate_zero(const struct ofp_header *oh,
+                                   struct ofputil_queue_rate_zero *oqrz){
+    enum ofpraw raw;
+    struct ofpbuf b;
+    ofpbuf_use_const(&b, oh, ntohs(oh->length));
+    raw = ofpraw_pull_assert(&b);
+    char commone[110] = "tc class change dev ";
+    char *commtwo = " parent 1:fffe classid 1:";
+    char commthree[3] = "";   
+    char *commfour = " htb rate ";
+    char *commfive = "bit ceil ";
+    char *commsix = "bit";
+    char commseven[12] = "";
+    //char commtest[30] = ""; 
+    if(raw == OFPRAW_OFPT10_QUEUE_ZERO ){
+        const struct ofp10_queue_rate_zero *oqz = ofpbuf_pull(&b, sizeof *oqz);
+        oqrz->queue_id = ntohl(oqz->queue_id);
+        oqrz->rate = ntohl(oqz->rate);
+        sprintf(commthree,"%d",oqrz->queue_id);
+        sprintf(commseven,"%d",oqrz->rate);
+        strcat(commone,oqz->net);
+        strcat(commone,commtwo);
+        strcat(commone,commthree);
+        strcat(commone,commfour);
+        strcat(commone,commseven);
+        strcat(commone,commfive);
+        strcat(commone,commseven);
+        strcat(commone,commsix);
+      //  sprintf(commtest,"%d",oqrz->rate);
+        VLOG_INFO(commone);  
+        //oqrz->net = oqz->net;
+      //  VLOG_INFO("=======raw10====decode_queue_rate_zero!!");
+    }else if(raw == OFPRAW_OFPT11_QUEUE_ZERO){
+        const struct ofp11_queue_rate_zero *oqz = ofpbuf_pull(&b, sizeof *oqz);
+        oqrz->queue_id = ntohl(oqz->queue_id);
+        oqrz->rate = ntohl(oqz->rate);
+        sprintf(commthree,"%d",oqrz->queue_id);
+        sprintf(commseven,"%d",oqrz->rate);
+        strcat(commone,oqz->net);
+        strcat(commone,commtwo);
+        strcat(commone,commthree);
+        strcat(commone,commfour);
+        strcat(commone,commseven);
+        strcat(commone,commfive);
+        strcat(commone,commseven);
+        strcat(commone,commsix);
+
+       // sprintf(commtest,"%d",oqrz->rate);
+        VLOG_INFO(commone);  
+        //oqrz->net = oqz->net;
+      //  VLOG_INFO("=======raw11====decode_queue_rate_zero!!");
+    }else{
+        OVS_NOT_REACHED();
+    }
+    FILE *pp = popen(commone, "r");   // now we executed the query command.
+    if (!pp) {
+        return -1;
+    }
+    char tmp[1024];
+    while (fgets(tmp, sizeof(tmp), pp) != NULL) {
+        if (tmp[strlen(tmp) - 1] == '\n') {
+            tmp[strlen(tmp) - 1] = '\0';
+        }
+        
+    }
+    pclose(pp);
+
+
+    VLOG_INFO("decode_queue_rate_zero!!");
+}
+struct ofpbuf *
+ofputil_encode_queue_rate_zero(enum ofp_version ofp_version,
+                                   const struct ofputil_queue_rate_zero *oqrz){
+       VLOG_INFO("encode_queue_rate_zero!!");
+}
+
 
 /* Creates and returns an OFPT_ECHO_REQUEST message with an empty payload. */
 struct ofpbuf *
@@ -8605,6 +8685,7 @@ ofputil_queue_stats_to_ofp10(const struct ofputil_queue_stats *oqs,
     qs10->queue_id = htonl(oqs->queue_id);
     put_32aligned_be64(&qs10->tx_bytes, htonll(oqs->tx_bytes));
     put_32aligned_be64(&qs10->tx_packets, htonll(oqs->tx_packets));
+    put_32aligned_be64(&qs10->left_packets, htonll(oqs->left_packets));
     put_32aligned_be64(&qs10->tx_errors, htonll(oqs->tx_errors));
 }
 
@@ -8616,6 +8697,7 @@ ofputil_queue_stats_to_ofp11(const struct ofputil_queue_stats *oqs,
     qs11->queue_id = htonl(oqs->queue_id);
     qs11->tx_bytes = htonll(oqs->tx_bytes);
     qs11->tx_packets = htonll(oqs->tx_packets);
+    qs11->left_packets = htonll(oqs->left_packets);
     qs11->tx_errors = htonll(oqs->tx_errors);
 }
 

@@ -21,6 +21,7 @@
 #include <inttypes.h>
 #include <netinet/in.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
 #include <unistd.h>
 
@@ -1572,16 +1573,58 @@ netdev_get_queue_stats(const struct netdev *netdev, unsigned int queue_id,
                        struct netdev_queue_stats *stats)
 {
     const struct netdev_class *class = netdev->netdev_class;
+    //ZHL
+    int finalpack = 0;
+    char search[10]="backlog";
+   // char *command = "tc -s class ls dev s2-eth2 parent 1:fffe classid 1:3";   //this is the command that we used to test
+    char *netname = netdev_get_name(netdev);  //netdevice's name
+    char commone[80] = "tc -s class ls dev ";
+    char *commtwo = " parent 1:fffe classid 1:";
+    char commthree[3] = "";
+    strcat(commone,netname);
+    strcat(commone,commtwo);
+    int queid = queue_id;
+    sprintf(commthree,"%d",queid+1);
+    strcat(commone,commthree); //  now we construct the query command successfully.
+   // VLOG_INFO(commone);   // test is end ,now we do not need to output the command line
+    FILE *pp = popen(commone, "r");   // now we executed the query command.
+    if (!pp) {
+        return -1;
+    }
+    char tmp[1024];
+    while (fgets(tmp, sizeof(tmp), pp) != NULL) {
+        if (tmp[strlen(tmp) - 1] == '\n') {
+            tmp[strlen(tmp) - 1] = '\0';
+        }
+        char *myp;
+        myp = strstr(tmp,search);
+        if(myp){
+            char delims[] = " ";
+            char *result = NULL;
+            result = strtok( myp, delims );
+            while( result != NULL ) {
+                if(strstr(result,"p")){
+                    finalpack = atoi(result);  //get the left packets data and transfer it to int type.
+		    break;
+                }
+                result = strtok( NULL, delims );
+           }
+        }
+    }
+    pclose(pp);
+    //zZHL
     int retval;
-
     retval = (class->get_queue_stats
               ? class->get_queue_stats(netdev, queue_id, stats)
               : EOPNOTSUPP);
     if (retval) {
         stats->tx_bytes = UINT64_MAX;
         stats->tx_packets = UINT64_MAX;
+        stats->left_packets = UINT64_MAX;
         stats->tx_errors = UINT64_MAX;
         stats->created = LLONG_MIN;
+    }else{
+        stats->left_packets = finalpack;   // this statement will give the left packets in queue.
     }
     return retval;
 }

@@ -185,6 +185,14 @@ struct ofp10_packet_out {
 };
 OFP_ASSERT(sizeof(struct ofp10_packet_out) == 8);
 
+/* Body for queue rate zero. */
+struct ofp10_queue_rate_zero {
+	ovs_be32 queue_id;       /* All queues if OFPQ_ALL. */
+	ovs_be32 rate;       /*  queues rate. */
+    uint8_t net[8];          /* Align to 32-bits. */
+};
+OFP_ASSERT(sizeof(struct ofp10_queue_rate_zero) == 16);
+
 /* Flow wildcards. */
 enum ofp10_flow_wildcards {
     OFPFW10_IN_PORT    = 1 << 0,  /* Switch input port. */
@@ -398,6 +406,8 @@ struct ofp10_queue_stats_request {
 };
 OFP_ASSERT(sizeof(struct ofp10_queue_stats_request) == 8);
 
+
+
 /* Body for stats reply of type OFPST_QUEUE consists of an array of this
  * structure type. */
 struct ofp10_queue_stats {
@@ -406,9 +416,10 @@ struct ofp10_queue_stats {
     ovs_be32 queue_id;       /* Queue id. */
     ovs_32aligned_be64 tx_bytes;   /* Number of transmitted bytes. */
     ovs_32aligned_be64 tx_packets; /* Number of transmitted packets. */
+    ovs_32aligned_be64 left_packets; /* Number of left packets. */
     ovs_32aligned_be64 tx_errors;  /* # of packets dropped due to overrun. */
 };
-OFP_ASSERT(sizeof(struct ofp10_queue_stats) == 32);
+OFP_ASSERT(sizeof(struct ofp10_queue_stats) == 40);
 
 /* Vendor extension stats message. */
 struct ofp10_vendor_stats_msg {

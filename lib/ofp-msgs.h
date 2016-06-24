@@ -247,6 +247,12 @@ enum ofpraw {
     /* OFPT 1.4+ (34): struct ofp14_bundle_ctrl_msg, uint8_t[]. */
     OFPRAW_OFPT14_BUNDLE_ADD_MESSAGE,
 
+    /* OFPT 1.0 (38): struct ofp10_queue_rate_zero, uint8_t[]. */
+    OFPRAW_OFPT10_QUEUE_ZERO,
+    /* OFPT 1.1+ (38): struct ofp11_queue_rate_zero, uint8_t[]. */
+    OFPRAW_OFPT11_QUEUE_ZERO,
+
+
 /* Standard statistics. */
 
     /* OFPST 1.0+ (0): void. */
@@ -494,6 +500,8 @@ enum ofptype {
     /* Controller command messages. */
     OFPTYPE_PACKET_OUT,          /* OFPRAW_OFPT10_PACKET_OUT.
                                   * OFPRAW_OFPT11_PACKET_OUT. */
+	OFPTYPE_QUEUE_ZERO,          /* OFPRAW_OFPT10_QUEUE_ZERO.
+                                  * OFPRAW_OFPT11_QUEUE_ZERO. */
     OFPTYPE_FLOW_MOD,            /* OFPRAW_OFPT10_FLOW_MOD.
                                   * OFPRAW_OFPT11_FLOW_MOD.
                                   * OFPRAW_NXT_FLOW_MOD. */

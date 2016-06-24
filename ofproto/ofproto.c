@@ -3405,6 +3405,25 @@ exit:
     return error;
 }
 
+static enum ofperr
+handle_queue_zero(struct ofconn *ofconn, const struct ofp_header *oh)
+{
+     VLOG_INFO("=====********************I don't think it is success!ZHL ZHLZHL GOT QUEUE rate zero FROM CONTROLLER ========");
+//zhl
+    struct ofproto *p = ofconn_get_ofproto(ofconn);
+    struct ofputil_queue_rate_zero qrz;
+
+ //   COVERAGE_INC(ofproto_packet_out);
+
+    ofputil_decode_queue_rate_zero(oh, &qrz);
+
+
+//zhl
+
+
+    return 0;
+}
+
 static void
 update_port_config(struct ofconn *ofconn, struct ofport *port,
                    enum ofputil_port_config config,
@@ -4295,6 +4314,7 @@ put_queue_stats(struct queue_stats_cbdata *cbdata, uint32_t queue_id,
     oqs.queue_id = queue_id;
     oqs.tx_bytes = stats->tx_bytes;
     oqs.tx_packets = stats->tx_packets;
+    oqs.left_packets = stats->left_packets;
     oqs.tx_errors = stats->tx_errors;
     if (stats->created != LLONG_MIN) {
         calc_duration(stats->created, cbdata->now,
@@ -4302,6 +4322,7 @@ put_queue_stats(struct queue_stats_cbdata *cbdata, uint32_t queue_id,
     } else {
         oqs.duration_sec = oqs.duration_nsec = UINT32_MAX;
     }
+    VLOG_INFO("3!yes!!!!!HAHA!HAILNG ALLENallen hailong");
     ofputil_append_queue_stat(&cbdata->replies, &oqs);
 }
 
@@ -6953,6 +6974,9 @@ handle_openflow__(struct ofconn *ofconn, const struct ofpbuf *msg)
 
     case OFPTYPE_PACKET_OUT:
         return handle_packet_out(ofconn, oh);
+
+    case OFPTYPE_QUEUE_ZERO:
+        return handle_queue_zero(ofconn, oh);//handle zhl queue rate zero message!
 
     case OFPTYPE_PORT_MOD:
         return handle_port_mod(ofconn, oh);
