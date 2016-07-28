@@ -25,7 +25,7 @@
 #include "ovs-numa.h"
 #include "packets.h"
 #include "seq.h"
-#include "shash.h"
+#include "openvswitch/shash.h"
 #include "smap.h"
 
 #ifdef  __cplusplus
@@ -303,10 +303,6 @@ struct netdev_class {
      * otherwise a positive errno value.
      *
      * 'n_txq' specifies the exact number of transmission queues to create.
-     * The caller will call netdev_send() concurrently from 'n_txq' different
-     * threads (with different qid).  The netdev provider is responsible for
-     * making sure that these concurrent calls do not create a race condition
-     * by using multiple hw queues or locking.
      *
      * The caller will call netdev_reconfigure() (if necessary) before using
      * netdev_send() on any of the newly configured queues, giving the provider
@@ -328,6 +324,11 @@ struct netdev_class {
      * packets.  If 'may_steal' is true, the caller transfers ownership of all
      * the packets to the network device, regardless of success.
      *
+     * If 'concurrent_txq' is true, the caller may perform concurrent calls
+     * to netdev_send() with the same 'qid'. The netdev provider is responsible
+     * for making sure that these concurrent calls do not create a race
+     * condition by using locking or other synchronization if required.
+     *
      * The network device is expected to maintain one or more packet
      * transmission queues, so that the caller does not ordinarily have to
      * do additional queuing of packets.  'qid' specifies the queue to use
@@ -340,8 +341,8 @@ struct netdev_class {
      * network device from being usefully used by the netdev-based "userspace
      * datapath".  It will also prevent the OVS implementation of bonding from
      * working properly over 'netdev'.) */
-    int (*send)(struct netdev *netdev, int qid, struct dp_packet **buffers,
-                int cnt, bool may_steal);
+    int (*send)(struct netdev *netdev, int qid, struct dp_packet_batch *batch,
+                bool may_steal, bool concurrent_txq);
 
     /* Registers with the poll loop to wake up from the next call to
      * poll_block() when the packet transmission queue for 'netdev' has
@@ -727,25 +728,24 @@ struct netdev_class {
     void (*rxq_destruct)(struct netdev_rxq *);
     void (*rxq_dealloc)(struct netdev_rxq *);
 
-    /* Attempts to receive a batch of packets from 'rx'.  The caller supplies
-     * 'pkts' as the pointer to the beginning of an array of MAX_RX_BATCH
-     * pointers to dp_packet.  If successful, the implementation stores
-     * pointers to up to MAX_RX_BATCH dp_packets into the array, transferring
-     * ownership of the packets to the caller, stores the number of received
-     * packets into '*cnt', and returns 0.
+    /* Attempts to receive a batch of packets from 'rx'.  In 'batch', the
+     * caller supplies 'packets' as the pointer to the beginning of an array
+     * of NETDEV_MAX_BURST pointers to dp_packet.  If successful, the
+     * implementation stores pointers to up to NETDEV_MAX_BURST dp_packets into
+     * the array, transferring ownership of the packets to the caller, stores
+     * the number of received packets into 'count', and returns 0.
      *
      * The implementation does not necessarily initialize any non-data members
-     * of 'pkts'.  That is, the caller must initialize layer pointers and
-     * metadata itself, if desired, e.g. with pkt_metadata_init() and
-     * miniflow_extract().
+     * of 'packets' in 'batch'.  That is, the caller must initialize layer
+     * pointers and metadata itself, if desired, e.g. with pkt_metadata_init()
+     * and miniflow_extract().
      *
      * Implementations should allocate buffers with DP_NETDEV_HEADROOM bytes of
      * headroom.
      *
      * Returns EAGAIN immediately if no packet is ready to be received or
      * another positive errno value if an error was encountered. */
-    int (*rxq_recv)(struct netdev_rxq *rx, struct dp_packet **pkts,
-                    int *cnt);
+    int (*rxq_recv)(struct netdev_rxq *rx, struct dp_packet_batch *batch);
 
     /* Registers with the poll loop to wake up from the next call to
      * poll_block() when a packet is ready to be received with

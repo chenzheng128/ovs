@@ -39,9 +39,6 @@ struct ovs_list {
 static const struct ovs_list OVS_LIST_POISON =
     { (struct ovs_list *) (UINTPTR_MAX / 0xf * 0xc),
       (struct ovs_list *) (UINTPTR_MAX / 0xf * 0xc) };
-#define OVS_LIST_POISON \
-(struct ovs_list) { (struct ovs_list *) (uintptr_t) 0xccccccccccccccccULL, \
-                    (struct ovs_list *) (uintptr_t) 0xccccccccccccccccULL }
 
 static inline void ovs_list_init(struct ovs_list *);
 static inline void ovs_list_poison(struct ovs_list *);
@@ -83,6 +80,12 @@ static inline bool ovs_list_is_short(const struct ovs_list *);
     for (INIT_CONTAINER(ITER, (LIST)->prev, MEMBER);                    \
          &(ITER)->MEMBER != (LIST);                                     \
          ASSIGN_CONTAINER(ITER, (ITER)->MEMBER.prev, MEMBER))
+#define LIST_FOR_EACH_REVERSE_SAFE(ITER, PREV, MEMBER, LIST)        \
+    for (INIT_CONTAINER(ITER, (LIST)->prev, MEMBER);                \
+         (&(ITER)->MEMBER != (LIST)                                 \
+          ? INIT_CONTAINER(PREV, (ITER)->MEMBER.prev, MEMBER), 1    \
+          : 0);                                                     \
+         (ITER) = (PREV))
 #define LIST_FOR_EACH_REVERSE_CONTINUE(ITER, MEMBER, LIST)              \
     for (ASSIGN_CONTAINER(ITER, (ITER)->MEMBER.prev, MEMBER);           \
          &(ITER)->MEMBER != (LIST);                                     \
@@ -289,6 +292,13 @@ static inline bool
 ovs_list_is_short(const struct ovs_list *list)
 {
     return list->next == list->prev;
+}
+
+/* Transplant a list into another, and resets the origin list */
+static inline void
+ovs_list_push_back_all(struct ovs_list *dst, struct ovs_list *src)
+{
+    ovs_list_splice(dst, src->next, src);
 }
 
 #endif /* list.h */

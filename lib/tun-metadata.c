@@ -20,7 +20,7 @@
 
 #include "bitmap.h"
 #include "compiler.h"
-#include "hmap.h"
+#include "openvswitch/hmap.h"
 #include "openvswitch/match.h"
 #include "nx-match.h"
 #include "odp-netlink.h"
@@ -29,6 +29,7 @@
 #include "ovs-rcu.h"
 #include "packets.h"
 #include "tun-metadata.h"
+#include "util.h"
 
 struct tun_meta_entry {
     struct hmap_node node;      /* In struct tun_table's key_hmap. */
@@ -490,7 +491,7 @@ memcpy_to_metadata(struct tun_metadata *dst, const void *src,
     int addr = 0;
 
     while (chain) {
-        memcpy(dst->opts.u8 + loc->c.offset + addr, (uint8_t *)src + addr,
+        memcpy(dst->opts.u8 + chain->offset, (uint8_t *)src + addr,
                chain->len);
         addr += chain->len;
         chain = chain->next;
@@ -507,7 +508,7 @@ memcpy_from_metadata(void *dst, const struct tun_metadata *src,
     int addr = 0;
 
     while (chain) {
-        memcpy((uint8_t *)dst + addr, src->opts.u8 + loc->c.offset + addr,
+        memcpy((uint8_t *)dst + addr, src->opts.u8 + chain->offset,
                chain->len);
         addr += chain->len;
         chain = chain->next;

@@ -200,6 +200,80 @@
 +-------------------------------+     +-------------------------------+
   </pre>
 
+  <h2>Information Flow in OVN</h2>
+
+  <p>
+    Configuration data in OVN flows from north to south.  The CMS, through its
+    OVN/CMS plugin, passes the logical network configuration to
+    <code>ovn-northd</code> via the northbound database.  In turn,
+    <code>ovn-northd</code> compiles the configuration into a lower-level form
+    and passes it to all of the chassis via the southbound database.
+  </p>
+
+  <p>
+    Status information in OVN flows from south to north.  OVN currently
+    provides only a few forms of status information.  First,
+    <code>ovn-northd</code> populates the <code>up</code> column in the
+    northbound <code>Logical_Switch_Port</code> table: if a logical port's
+    <code>chassis</code> column in the southbound <code>Port_Binding</code>
+    table is nonempty, it sets <code>up</code> to <code>true</code>, otherwise
+    to <code>false</code>.  This allows the CMS to detect when a VM's
+    networking has come up.
+  </p>
+
+  <p>
+    Second, OVN provides feedback to the CMS on the realization of its
+    configuration, that is, whether the configuration provided by the CMS has
+    taken effect.  This feature requires the CMS to participate in a sequence
+    number protocol, which works the following way:
+  </p>
+
+  <ol>
+    <li>
+      When the CMS updates the configuration in the northbound database, as
+      part of the same transaction, it increments the value of the
+      <code>nb_cfg</code> column in the <code>NB_Global</code> table.  (This is
+      only necessary if the CMS wants to know when the configuration has been
+      realized.)
+    </li>
+
+    <li>
+      When <code>ovn-northd</code> updates the southbound database based on a
+      given snapshot of the northbound database, it copies <code>nb_cfg</code>
+      from northbound <code>NB_Global</code> into the southbound database
+      <code>SB_Global</code> table, as part of the same transaction.  (Thus, an
+      observer monitoring both databases can determine when the southbound
+      database is caught up with the northbound.)
+    </li>
+
+    <li>
+      After <code>ovn-northd</code> receives confirmation from the southbound
+      database server that its changes have committed, it updates
+      <code>sb_cfg</code> in the northbound <code>NB_Global</code> table to the
+      <code>nb_cfg</code> version that was pushed down.  (Thus, the CMS or
+      another observer can determine when the southbound database is caught up
+      without a connection to the southbound database.)
+    </li>
+
+    <li>
+      The <code>ovn-controller</code> process on each chassis receives the
+      updated southbound database, with the updated <code>nb_cfg</code>.  This
+      process in turn updates the physical flows installed in the chassis's
+      Open vSwitch instances.  When it receives confirmation from Open vSwitch
+      that the physical flows have been updated, it updates <code>nb_cfg</code>
+      in its own <code>Chassis</code> record in the southbound database.
+    </li>
+
+    <li>
+      <code>ovn-northd</code> monitors the <code>nb_cfg</code> column in all of
+      the <code>Chassis</code> records in the southbound database.  It keeps
+      track of the minimum value among all the records and copies it into the
+      <code>hv_cfg</code> column in the northbound <code>NB_Global</code>
+      table.  (Thus, the CMS or another observer can determine when all of the
+      hypervisors have caught up to the northbound configuration.)
+    </li>
+  </ol>
+
   <h2>Chassis Setup</h2>
 
   <p>
@@ -340,10 +414,11 @@
 
     <li>
       The CMS plugin updates the OVN Northbound database to include the new
-      VIF, by adding a row to the <code>Logical_Port</code> table.  In the new
-      row, <code>name</code> is <var>vif-id</var>, <code>mac</code> is
-      <var>mac</var>, <code>switch</code> points to the OVN logical switch's
-      Logical_Switch record, and other columns are initialized appropriately.
+      VIF, by adding a row to the <code>Logical_Switch_Port</code>
+      table.  In the new row, <code>name</code> is <var>vif-id</var>,
+      <code>mac</code> is <var>mac</var>, <code>switch</code> points to
+      the OVN logical switch's Logical_Switch record, and other columns
+      are initialized appropriately.
     </li>
 
     <li>
@@ -381,12 +456,12 @@
     <li>
       On the hypervisor where the VM is powered on, <code>ovn-controller</code>
       notices <code>external-ids</code>:<code>iface-id</code> in the new
-      Interface.  In response, it updates the local hypervisor's OpenFlow
-      tables so that packets to and from the VIF are properly handled.
-      Afterward, in the OVN Southbound DB, it updates the
+      Interface. In response, in the OVN Southbound DB, it updates the
       <code>Binding</code> table's <code>chassis</code> column for the
-      row that links the logical port from
-      <code>external-ids</code>:<code>iface-id</code> to the hypervisor.
+      row that links the logical port from <code>external-ids</code>:<code>
+      iface-id</code> to the hypervisor. Afterward, <code>ovn-controller</code>
+      updates the local hypervisor's OpenFlow tables so that packets to and from
+      the VIF are properly handled.
     </li>
 
     <li>
@@ -394,11 +469,11 @@
       networking is ready.  To support this, <code>ovn-northd</code> notices
       the <code>chassis</code> column updated for the row in
       <code>Binding</code> table and pushes this upward by updating the
-      <ref column="up" table="Logical_Port" db="OVN_NB"/> column in the OVN
-      Northbound database's <ref table="Logical_Port" db="OVN_NB"/> table to
-      indicate that the VIF is now up.  The CMS, if it uses this feature, can
-      then
-      react by allowing the VM's execution to proceed.
+      <ref column="up" table="Logical_Switch_Port" db="OVN_NB"/> column
+      in the OVN Northbound database's <ref table="Logical_Switch_Port"
+      db="OVN_NB"/> table to indicate that the VIF is now up.  The CMS,
+      if it uses this feature, can then react by allowing the VM's
+      execution to proceed.
     </li>
 
     <li>
@@ -440,7 +515,7 @@
 
     <li>
       The CMS plugin removes the VIF from the OVN Northbound database,
-      by deleting its row in the <code>Logical_Port</code> table.
+      by deleting its row in the <code>Logical_Switch_Port</code> table.
     </li>
 
     <li>
@@ -533,10 +608,11 @@
       The container spawning entity (either directly or through the CMS that
       manages the underlying infrastructure) updates the OVN Northbound
       database to include the new CIF, by adding a row to the
-      <code>Logical_Port</code> table.  In the new row, <code>name</code> is
-      any unique identifier, <code>parent_name</code> is the <var>vif-id</var>
-      of the VM through which the CIF's network traffic is expected to go
-      through and the <code>tag</code> is the VLAN tag that identifies the
+      <code>Logical_Switch_Port</code> table.  In the new row,
+      <code>name</code> is any unique identifier,
+      <code>parent_name</code> is the <var>vif-id</var> of the VM
+      through which the CIF's network traffic is expected to go through
+      and the <code>tag</code> is the VLAN tag that identifies the
       network traffic of that CIF.
     </li>
 
@@ -567,9 +643,9 @@
       One can only start the application inside the container after the
       underlying network is ready.  To support this, <code>ovn-northd</code>
       notices the updated <code>chassis</code> column in <code>Binding</code>
-      table and updates the <ref column="up" table="Logical_Port"
+      table and updates the <ref column="up" table="Logical_Switch_Port"
       db="OVN_NB"/> column in the OVN Northbound database's
-      <ref table="Logical_Port" db="OVN_NB"/> table to indicate that the
+      <ref table="Logical_Switch_Port" db="OVN_NB"/> table to indicate that the
       CIF is now up.  The entity responsible to start the container application
       queries this value and starts the application.
     </li>
@@ -577,7 +653,7 @@
     <li>
       Eventually the entity that created and started the container, stops it.
       The entity, through the CMS (or directly) deletes its row in the
-      <code>Logical_Port</code> table.
+      <code>Logical_Switch_Port</code> table.
     </li>
 
     <li>
@@ -639,7 +715,7 @@
         entered the logical datapath.
         <!-- Keep the following in sync with MFF_LOG_INPORT in
              ovn/lib/logical-fields.h. -->
-        OVN stores this in Nicira extension register number 6.
+        OVN stores this in Nicira extension register number 14.
       </p>
 
       <p>
@@ -660,7 +736,7 @@
         beginning of the logical ingress pipeline.
         <!-- Keep the following in sync with MFF_LOG_OUTPORT in
              ovn/lib/logical-fields.h. -->
-        OVN stores this in Nicira extension register number 7.
+        OVN stores this in Nicira extension register number 15.
       </p>
 
       <p>
@@ -669,12 +745,27 @@
       </p>
     </dd>
 
-    <dt>conntrack zone field</dt>
+    <dt>conntrack zone field for logical ports</dt>
     <dd>
-      A field that denotes the connection tracking zone.  The value only
-      has local significance and is not meaningful between chassis.
-      This is initialized to 0 at the beginning of the logical ingress
-      pipeline.  OVN stores this in Nicira extension register number 5.
+      A field that denotes the connection tracking zone for logical ports.
+      The value only has local significance and is not meaningful between
+      chassis.  This is initialized to 0 at the beginning of the logical
+        <!-- Keep the following in sync with MFF_LOG_CT_ZONE in
+             ovn/lib/logical-fields.h. -->
+      ingress pipeline.  OVN stores this in Nicira extension register
+      number 13.
+    </dd>
+
+    <dt>conntrack zone fields for Gateway router</dt>
+    <dd>
+      Fields that denote the connection tracking zones for Gateway routers.
+      These values only have local significance (only on chassis that have
+      Gateway routers instantiated) and is not meaningful between
+      chassis.  OVN stores the zone information for DNATting in Nicira
+        <!-- Keep the following in sync with MFF_LOG_DNAT_ZONE and
+        MFF_LOG_SNAT_ZONE in ovn/lib/logical-fields.h. -->
+      extension register number 11 and zone information for SNATing in Nicira
+      extension register number 12.
     </dd>
 
     <dt>VLAN ID</dt>
@@ -933,7 +1024,7 @@
     <li>
       Now, the administrator can use the CMS to add a VTEP logical switch
       to the OVN logical network.  To do that, the CMS must first create a
-      new <code>Logical_Port</code> table entry in the <code>
+      new <code>Logical_Switch_Port</code> table entry in the <code>
       OVN_Northbound</code> database.  Then, the <var>type</var> column
       of this entry must be set to "vtep".  Next, the <var>
       vtep-logical-switch</var> and <var>vtep-physical-switch</var> keys

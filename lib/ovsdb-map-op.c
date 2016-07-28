@@ -17,7 +17,7 @@
 #include <config.h>
 #include "ovsdb-map-op.h"
 #include "util.h"
-#include "hmap.h"
+#include "openvswitch/hmap.h"
 #include "hash.h"
 
 /* Map Operation: a Partial Map Update */
@@ -57,6 +57,7 @@ map_op_destroy_datum(struct map_op *map_op, const struct ovsdb_type *type)
     } else {
         ovsdb_datum_destroy(map_op->datum, type);
     }
+    free(map_op->datum);
     map_op->datum = NULL;
 }
 

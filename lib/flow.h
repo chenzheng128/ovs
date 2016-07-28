@@ -18,6 +18,7 @@
 
 #include <sys/types.h>
 #include <netinet/in.h>
+#include <netinet/icmp6.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
@@ -105,6 +106,10 @@ void flow_set_mpls_lse(struct flow *, int idx, ovs_be32 lse);
 
 void flow_compose(struct dp_packet *, const struct flow *);
 
+bool parse_ipv6_ext_hdrs(const void **datap, size_t *sizep, uint8_t *nw_proto,
+                         uint8_t *nw_frag);
+ovs_be16 parse_dl_type(const struct eth_header *data_, size_t size);
+
 static inline uint64_t
 flow_get_xreg(const struct flow *flow, int idx)
 {
@@ -116,6 +121,28 @@ flow_set_xreg(struct flow *flow, int idx, uint64_t value)
 {
     flow->regs[idx * 2] = value >> 32;
     flow->regs[idx * 2 + 1] = value;
+}
+
+static inline ovs_u128
+flow_get_xxreg(const struct flow *flow, int idx)
+{
+    ovs_u128 value;
+
+    value.u64.hi = (uint64_t) flow->regs[idx * 4] << 32;
+    value.u64.hi |= flow->regs[idx * 4 + 1];
+    value.u64.lo = (uint64_t) flow->regs[idx * 4 + 2] << 32;
+    value.u64.lo |= flow->regs[idx * 4 + 3];
+
+    return value;
+}
+
+static inline void
+flow_set_xxreg(struct flow *flow, int idx, ovs_u128 value)
+{
+    flow->regs[idx * 4] = value.u64.hi >> 32;
+    flow->regs[idx * 4 + 1] = value.u64.hi;
+    flow->regs[idx * 4 + 2] = value.u64.lo >> 32;
+    flow->regs[idx * 4 + 3] = value.u64.lo;
 }
 
 static inline int
@@ -852,6 +879,26 @@ static inline bool is_icmpv6(const struct flow *flow,
             memset(&wc->masks.nw_proto, 0xff, sizeof wc->masks.nw_proto);
         }
         return flow->nw_proto == IPPROTO_ICMPV6;
+    }
+    return false;
+}
+
+static inline bool is_nd(const struct flow *flow,
+                         struct flow_wildcards *wc)
+{
+    if (is_icmpv6(flow, wc)) {
+        if (wc) {
+            memset(&wc->masks.tp_dst, 0xff, sizeof wc->masks.tp_dst);
+        }
+        if (flow->tp_dst != htons(0)) {
+            return false;
+        }
+
+        if (wc) {
+            memset(&wc->masks.tp_src, 0xff, sizeof wc->masks.tp_src);
+        }
+        return (flow->tp_src == htons(ND_NEIGHBOR_SOLICIT) ||
+                flow->tp_src == htons(ND_NEIGHBOR_ADVERT));
     }
     return false;
 }

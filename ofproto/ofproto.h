@@ -82,6 +82,7 @@ struct ofproto_ipfix_bridge_exporter_options {
     bool enable_tunnel_sampling;
     bool enable_input_sampling;
     bool enable_output_sampling;
+    char *virtual_obs_id;
 };
 
 struct ofproto_ipfix_flow_exporter_options {
@@ -89,6 +90,8 @@ struct ofproto_ipfix_flow_exporter_options {
     struct sset targets;
     uint32_t cache_active_timeout;
     uint32_t cache_max_flows;
+    bool enable_tunnel_sampling;
+    char *virtual_obs_id;
 };
 
 struct ofproto_rstp_status {
@@ -290,6 +293,8 @@ const char *ofproto_port_open_type(const char *datapath_type,
                                    const char *port_type);
 int ofproto_port_add(struct ofproto *, struct netdev *, ofp_port_t *ofp_portp);
 int ofproto_port_del(struct ofproto *, ofp_port_t ofp_port);
+void ofproto_port_set_config(struct ofproto *, ofp_port_t ofp_port,
+                             const struct smap *cfg);
 int ofproto_port_get_stats(const struct ofport *, struct netdev_stats *stats);
 
 int ofproto_port_query_by_name(const struct ofproto *, const char *devname,
@@ -424,6 +429,8 @@ struct ofproto_mirror_settings {
     /* Output (mutually exclusive). */
     void *out_bundle;           /* A registered ofbundle handle or NULL. */
     uint16_t out_vlan;          /* Output VLAN, only if out_bundle is NULL. */
+    uint16_t snaplen;           /* Max packet size of a mirrored packet
+                                   in byte, set to 0 equals 65535. */
 };
 
 int ofproto_mirror_register(struct ofproto *, void *aux,

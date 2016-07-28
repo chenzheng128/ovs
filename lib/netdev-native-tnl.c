@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2016 Nicira, Inc.
+ * Copyright (c) 2016 Red Hat, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,11 +17,14 @@
 
 #include <config.h>
 
+#include "netdev-native-tnl.h"
+
 #include <errno.h>
 #include <fcntl.h>
 #include <sys/socket.h>
 #include <net/if.h>
 #include <netinet/in.h>
+#include <netinet/ip.h>
 #include <netinet/ip6.h>
 #include <sys/ioctl.h>
 
@@ -28,36 +32,18 @@
 #include <stdlib.h>
 #include <sys/time.h>
 
-#include "openvswitch/list.h"
 #include "byte-order.h"
 #include "csum.h"
-#include "daemon.h"
-#include "dirs.h"
-#include "dpif.h"
 #include "dp-packet.h"
-#include "entropy.h"
-#include "flow.h"
-#include "hash.h"
-#include "hmap.h"
-#include "id-pool.h"
-#include "netdev-provider.h"
+#include "netdev.h"
 #include "netdev-vport.h"
 #include "netdev-vport-private.h"
 #include "odp-netlink.h"
-#include "dp-packet.h"
-#include "ovs-router.h"
 #include "packets.h"
-#include "poll-loop.h"
-#include "random.h"
-#include "route-table.h"
-#include "shash.h"
-#include "socket-util.h"
-#include "timeval.h"
-#include "netdev-native-tnl.h"
-#include "openvswitch/vlog.h"
+#include "seq.h"
 #include "unaligned.h"
 #include "unixctl.h"
-#include "util.h"
+#include "openvswitch/vlog.h"
 
 VLOG_DEFINE_THIS_MODULE(native_tnl);
 static struct vlog_rate_limit err_rl = VLOG_RATE_LIMIT_INIT(60, 5);
@@ -287,6 +273,7 @@ netdev_tnl_ip_build_header(struct ovs_action_push_tnl *data,
         ip->ip_frag_off = (params->flow->tunnel.flags & FLOW_TNL_F_DONT_FRAGMENT) ?
                           htons(IP_DF) : 0;
 
+        /* Checksum has already been zeroed by eth_build_header. */
         ip->ip_csum = csum(ip, sizeof *ip);
 
         data->header_len += IP_HEADER_LEN;
@@ -387,7 +374,7 @@ parse_gre_header(struct dp_packet *packet,
     }
 
     if (greh->flags & htons(GRE_KEY)) {
-        tnl->tun_id = (OVS_FORCE ovs_be64) ((OVS_FORCE uint64_t)(get_16aligned_be32(options)) << 32);
+        tnl->tun_id = be32_to_be64(get_16aligned_be32(options));
         tnl->flags |= FLOW_TNL_F_KEY;
         options++;
     }
@@ -471,8 +458,7 @@ netdev_gre_build_header(const struct netdev *netdev,
 
     if (tnl_cfg->out_key_present) {
         greh->flags |= htons(GRE_KEY);
-        put_16aligned_be32(options, (OVS_FORCE ovs_be32)
-                                    ((OVS_FORCE uint64_t) params->flow->tunnel.tun_id >> 32));
+        put_16aligned_be32(options, be64_to_be32(params->flow->tunnel.tun_id));
         options++;
     }
 

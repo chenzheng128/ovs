@@ -134,10 +134,10 @@ AC_DEFUN([OVS_CHECK_LINUX], [
     AC_MSG_RESULT([$kversion])
 
     if test "$version" -ge 4; then
-       if test "$version" = 4 && test "$patchlevel" -le 3; then
+       if test "$version" = 4 && test "$patchlevel" -le 6; then
           : # Linux 4.x
        else
-          AC_ERROR([Linux kernel in $KBUILD is version $kversion, but version newer than 4.3.x is not supported (please refer to the FAQ for advice)])
+          AC_ERROR([Linux kernel in $KBUILD is version $kversion, but version newer than 4.6.x is not supported (please refer to the FAQ for advice)])
        fi
     elif test "$version" = 3 && test "$patchlevel" -ge 10; then
        : # Linux 3.x
@@ -161,10 +161,11 @@ dnl Configure DPDK source tree
 AC_DEFUN([OVS_CHECK_DPDK], [
   AC_ARG_WITH([dpdk],
               [AC_HELP_STRING([--with-dpdk=/path/to/dpdk],
-                              [Specify the DPDK build directory])])
+                              [Specify the DPDK build directory])],
+              [have_dpdk=true])
 
   AC_MSG_CHECKING([whether dpdk datapath is enabled])
-  if test -z "$with_dpdk" || test "$with_dpdk" = no; then
+  if test "$have_dpdk" != true || test "$with_dpdk" = no; then
     AC_MSG_RESULT([no])
     DPDKLIB_FOUND=false
   else
@@ -208,6 +209,8 @@ AC_DEFUN([OVS_CHECK_DPDK], [
       [AC_DEFINE([VHOST_CUSE], [1], [DPDK vhost-cuse support enabled, vhost-user disabled.])
        DPDK_EXTRA_LIB="-lfuse"])
 
+    AC_SEARCH_LIBS([get_mempolicy],[numa],[],[AC_MSG_ERROR([unable to find libnuma, install the dependency package])])
+
     # On some systems we have to add -ldl to link with dpdk
     #
     # This code, at first, tries to link without -ldl (""),
@@ -218,7 +221,7 @@ AC_DEFUN([OVS_CHECK_DPDK], [
     DPDKLIB_FOUND=false
     save_LIBS=$LIBS
     for extras in "" "-ldl"; do
-        LIBS="$DPDK_LIB $extras $save_LIBS $DPDK_EXTRA_LIB"
+        LIBS="$DPDK_LIB $extras $save_LIBS $DPDK_EXTRA_LIB -lnuma"
         AC_LINK_IFELSE(
            [AC_LANG_PROGRAM([#include <rte_config.h>
                              #include <rte_eal.h>],
@@ -322,6 +325,39 @@ AC_DEFUN([OVS_FIND_FIELD_IFELSE], [
   fi
 ])
 
+dnl OVS_FIND_PARAM_IFELSE(FILE, FUNCTION, REGEX, [IF-MATCH], [IF-NO-MATCH])
+dnl
+dnl Looks for FUNCTION in FILE. If it is found, greps for REGEX within
+dnl the function signature starting from the line matching FUNCTION
+dnl and ending with the line containing the closing parenthesis.  If
+dnl this is successful, runs IF-MATCH, otherwise IF_NO_MATCH.  If
+dnl IF-MATCH is empty then it defines to
+dnl OVS_DEFINE(HAVE_<FUNCTION>_WITH_<REGEX>), with <FUNCTION> and
+dnl <REGEX> translated to uppercase.
+AC_DEFUN([OVS_FIND_PARAM_IFELSE], [
+  AC_MSG_CHECKING([whether $2 has parameter $3 in $1])
+  if test -f $1; then
+    awk '/$2[[ \t\n]]*\(/,/\)/' $1 2>/dev/null | grep '$3' >/dev/null
+    status=$?
+    case $status in
+      0)
+        AC_MSG_RESULT([yes])
+        m4_if([$4], [], [OVS_DEFINE([HAVE_]m4_toupper([$2])[_WITH_]m4_toupper([$3]))], [$4])
+        ;;
+      1)
+        AC_MSG_RESULT([no])
+        $5
+        ;;
+      *)
+        AC_MSG_ERROR([grep exited with status $status])
+        ;;
+    esac
+  else
+    AC_MSG_RESULT([file not found])
+    $5
+  fi
+])
+
 dnl OVS_DEFINE(NAME)
 dnl
 dnl Defines NAME to 1 in kcompat.h.
@@ -353,6 +389,7 @@ AC_DEFUN([OVS_CHECK_LINUX_COMPAT], [
 
   OVS_GREP_IFELSE([$KSRC/include/linux/err.h], [ERR_CAST])
   OVS_GREP_IFELSE([$KSRC/include/linux/err.h], [IS_ERR_OR_NULL])
+  OVS_GREP_IFELSE([$KSRC/include/linux/err.h], [PTR_ERR_OR_ZERO])
 
   OVS_GREP_IFELSE([$KSRC/include/linux/etherdevice.h], [eth_hw_addr_random])
   OVS_GREP_IFELSE([$KSRC/include/linux/etherdevice.h], [ether_addr_copy])
@@ -374,7 +411,13 @@ AC_DEFUN([OVS_CHECK_LINUX_COMPAT], [
                   [OVS_DEFINE([HAVE_INET_GET_LOCAL_PORT_RANGE_USING_NET])])
   OVS_GREP_IFELSE([$KSRC/include/net/ip.h], [ip_defrag.*net],
                   [OVS_DEFINE([HAVE_IP_DEFRAG_TAKES_NET])])
-  OVS_GREP_IFELSE([$KSRC/include/net/ip.h], [ip_do_fragment])
+  OVS_FIND_PARAM_IFELSE([$KSRC/include/net/ip.h],
+                        [ip_do_fragment], [net],
+                        [OVS_DEFINE([HAVE_IP_DO_FRAGMENT_TAKES_NET])])
+  OVS_FIND_PARAM_IFELSE([$KSRC/include/net/ip.h],
+                        [ip_local_out], [net],
+                        [OVS_DEFINE([HAVE_IP_LOCAL_OUT_TAKES_NET])])
+
   OVS_GREP_IFELSE([$KSRC/include/net/ip.h], [ip_skb_dst_mtu])
 
   OVS_GREP_IFELSE([$KSRC/include/net/ip.h], [IPSKB_FRAG_PMTU],
@@ -394,10 +437,22 @@ AC_DEFUN([OVS_CHECK_LINUX_COMPAT], [
   OVS_GREP_IFELSE([$KSRC/include/net/inetpeer.h], [vif],
                   [OVS_DEFINE([HAVE_INETPEER_VIF_SUPPORT])])
 
-  OVS_GREP_IFELSE([$KSRC/include/net/dst_metadata.h], [metadata_dst])
+  dnl Check for dst_cache and ipv6 lable to use backported tunnel infrastructure.
+  dnl OVS does not really need ipv6 label field, but its presence signifies that
+  dnl the stack has all required ipv6 support.
+  dnl OVS also does not need dst_cache But this dependency allows us to write
+  dnl much cleaner code.
+
+  OVS_FIND_FIELD_IFELSE([$KSRC/include/net/ip_tunnels.h], [ip_tunnel_key],
+                        [label],
+                        [OVS_GREP_IFELSE([$KSRC/include/net/ip_tunnels.h],
+                                         [iptunnel_pull_offloads],
+			[OVS_GREP_IFELSE([$KSRC/include/net/dst_cache.h], [dst_cache],
+                                         [OVS_DEFINE([USE_UPSTREAM_TUNNEL])])])])
 
   OVS_GREP_IFELSE([$KSRC/include/linux/net.h], [sock_create_kern.*net],
                   [OVS_DEFINE([HAVE_SOCK_CREATE_KERN_NET])])
+  OVS_GREP_IFELSE([$KSRC/include/linux/netdevice.h], [ndo_fill_metadata_dst])
   OVS_GREP_IFELSE([$KSRC/include/linux/netdevice.h], [dev_disable_lro])
   OVS_GREP_IFELSE([$KSRC/include/linux/netdevice.h], [dev_get_stats])
   OVS_GREP_IFELSE([$KSRC/include/linux/netdevice.h], [dev_get_by_index_rcu])
@@ -405,6 +460,8 @@ AC_DEFUN([OVS_CHECK_LINUX_COMPAT], [
   OVS_GREP_IFELSE([$KSRC/include/linux/netdevice.h], [__skb_gso_segment])
   OVS_GREP_IFELSE([$KSRC/include/linux/netdevice.h], [can_checksum_protocol])
   OVS_GREP_IFELSE([$KSRC/include/linux/netdevice.h], [ndo_get_iflink])
+  OVS_GREP_IFELSE([$KSRC/include/linux/netdevice.h], [ndo_add_vxlan_port])
+  OVS_GREP_IFELSE([$KSRC/include/linux/netdevice.h], [ndo_add_geneve_port])
   OVS_GREP_IFELSE([$KSRC/include/linux/netdevice.h], [netdev_features_t])
   dnl Ubuntu kernel 3.13 has defined this struct but not used for netdev->tstats.
   dnl So check type of tstats.
@@ -416,28 +473,43 @@ AC_DEFUN([OVS_CHECK_LINUX_COMPAT], [
   OVS_GREP_IFELSE([$KSRC/include/linux/netdevice.h], [udp_offload.*uoff],
                   [OVS_DEFINE([HAVE_UDP_OFFLOAD_ARG_UOFF])])
   OVS_GREP_IFELSE([$KSRC/include/linux/netdevice.h], [gro_remcsum])
+  OVS_GREP_IFELSE([$KSRC/include/linux/netdevice.h], [IFF_PHONY_HEADROOM])
+  OVS_FIND_PARAM_IFELSE([$KSRC/include/linux/netdevice.h],
+                        [netdev_master_upper_dev_link], [upper_priv],
+                        [OVS_DEFINE([HAVE_NETDEV_MASTER_UPPER_DEV_LINK_PRIV])])
 
   OVS_GREP_IFELSE([$KSRC/include/linux/netfilter.h], [nf_hook_state])
   OVS_GREP_IFELSE([$KSRC/include/linux/netfilter.h], [nf_register_net_hook])
   OVS_GREP_IFELSE([$KSRC/include/linux/netfilter.h], [nf_hookfn.*nf_hook_ops],
                   [OVS_DEFINE([HAVE_NF_HOOKFN_ARG_OPS])])
+  OVS_FIND_PARAM_IFELSE([$KSRC/include/linux/netfilter.h], [nf_hookfn], [priv],
+                  [OVS_DEFINE([HAVE_NF_HOOKFN_ARG_PRIV])])
+  OVS_FIND_FIELD_IFELSE([$KSRC/include/linux/netfilter.h], [nf_hook_ops],
+                        [owner], [OVS_DEFINE([HAVE_NF_HOOKS_OPS_OWNER])])
+
   OVS_FIND_FIELD_IFELSE([$KSRC/include/linux/netfilter_ipv6.h], [nf_ipv6_ops],
                         [fragment.*sock], [OVS_DEFINE([HAVE_NF_IPV6_OPS_FRAGMENT])])
 
-  OVS_GREP_IFELSE([$KSRC/include/net/netfilter/nf_conntrack.h],
-                  [tmpl_alloc.*conntrack_zone],
+  OVS_FIND_PARAM_IFELSE([$KSRC/include/net/netfilter/nf_conntrack.h],
+                  [nf_ct_tmpl_alloc], [nf_conntrack_zone],
                   [OVS_DEFINE([HAVE_NF_CT_TMPL_ALLOC_TAKES_STRUCT_ZONE])])
-  OVS_GREP_IFELSE([$KSRC/include/net/netfilter/nf_conntrack.h],
-                  [l3num.*struct.net],
+  OVS_FIND_PARAM_IFELSE([$KSRC/include/net/netfilter/nf_conntrack.h],
+                  [nf_ct_get_tuplepr], [struct.net],
                   [OVS_DEFINE([HAVE_NF_CT_GET_TUPLEPR_TAKES_STRUCT_NET])])
   OVS_GREP_IFELSE([$KSRC/include/net/netfilter/nf_conntrack_zones.h],
                   [nf_ct_zone_init])
   OVS_GREP_IFELSE([$KSRC/include/net/netfilter/nf_conntrack_labels.h],
                   [nf_connlabels_get])
+  OVS_FIND_PARAM_IFELSE([$KSRC/include/net/netfilter/nf_conntrack_labels.h],
+                  [nf_connlabels_get], [int bit],
+                  [OVS_DEFINE([HAVE_NF_CONNLABELS_GET_TAKES_BIT])])
   OVS_GREP_IFELSE([$KSRC/include/net/netfilter/ipv6/nf_defrag_ipv6.h],
                   [nf_ct_frag6_consume_orig])
   OVS_GREP_IFELSE([$KSRC/include/net/netfilter/ipv6/nf_defrag_ipv6.h],
                   [nf_ct_frag6_output])
+  OVS_GREP_IFELSE([$KSRC/include/net/netfilter/nf_nat.h], [nf_ct_nat_ext_add])
+  OVS_GREP_IFELSE([$KSRC/include/net/netfilter/nf_nat.h], [nf_nat_alloc_null_binding])
+  OVS_GREP_IFELSE([$KSRC/include/net/netfilter/nf_conntrack_seqadj.h], [nf_ct_seq_adjust])
 
   OVS_GREP_IFELSE([$KSRC/include/linux/random.h], [prandom_u32])
   OVS_GREP_IFELSE([$KSRC/include/linux/random.h], [prandom_u32_max])
@@ -462,8 +534,8 @@ AC_DEFUN([OVS_CHECK_LINUX_COMPAT], [
                   [OVS_DEFINE([HAVE_PROTO_DATA_VALID])])
   OVS_GREP_IFELSE([$KSRC/include/linux/skbuff.h], [skb_checksum_start_offset])
   OVS_GREP_IFELSE([$KSRC/include/linux/skbuff.h], [inner_protocol])
-  OVS_GREP_IFELSE([$KSRC/include/linux/skbuff.h], [inner_mac_header])
-  OVS_GREP_IFELSE([$KSRC/include/linux/skbuff.h], [inner_network_header])
+  OVS_GREP_IFELSE([$KSRC/include/linux/skbuff.h], [inner_protocol_type])
+  OVS_GREP_IFELSE([$KSRC/include/linux/skbuff.h], [skb_inner_transport_offset])
   OVS_GREP_IFELSE([$KSRC/include/linux/skbuff.h], [kfree_skb_list])
   OVS_GREP_IFELSE([$KSRC/include/linux/skbuff.h], [skb_scrub_packet.*xnet],
 		  [OVS_DEFINE([HAVE_SKB_SCRUB_PACKET_XNET])])
@@ -496,6 +568,8 @@ AC_DEFUN([OVS_CHECK_LINUX_COMPAT], [
   OVS_GREP_IFELSE([$KSRC/include/linux/skbuff.h], [skb_ensure_writable])
   OVS_GREP_IFELSE([$KSRC/include/linux/skbuff.h], [skb_vlan_pop])
   OVS_GREP_IFELSE([$KSRC/include/linux/skbuff.h], [skb_vlan_push])
+  OVS_GREP_IFELSE([$KSRC/include/linux/skbuff.h], [skb_clear_hash_if_not_l4])
+  OVS_GREP_IFELSE([$KSRC/include/linux/skbuff.h], [skb_postpush_rcsum])
 
   OVS_GREP_IFELSE([$KSRC/include/linux/types.h], [bool],
                   [OVS_DEFINE([HAVE_BOOL_TYPE])])
@@ -513,12 +587,15 @@ AC_DEFUN([OVS_CHECK_LINUX_COMPAT], [
   OVS_GREP_IFELSE([$KSRC/include/net/genetlink.h], [genl_has_listeners])
   OVS_GREP_IFELSE([$KSRC/include/net/genetlink.h], [mcgrp_offset])
   OVS_GREP_IFELSE([$KSRC/include/net/genetlink.h], [parallel_ops])
-  OVS_GREP_IFELSE([$KSRC/include/net/genetlink.h], [genlmsg_new_unicast])
   OVS_GREP_IFELSE([$KSRC/include/net/genetlink.h], [netlink_has_listeners(net->genl_sock],
                   [OVS_DEFINE([HAVE_GENL_HAS_LISTENERS_TAKES_NET])])
   OVS_GREP_IFELSE([$KSRC/include/net/genetlink.h], [genlmsg_parse])
   OVS_GREP_IFELSE([$KSRC/include/net/genetlink.h], [genl_notify.*family],
                   [OVS_DEFINE([HAVE_GENL_NOTIFY_TAKES_FAMILY])])
+  OVS_FIND_PARAM_IFELSE([$KSRC/include/net/genetlink.h],
+                        [genl_notify], [net],
+                        [OVS_DEFINE([HAVE_GENL_NOTIFY_TAKES_NET])])
+
 
   OVS_FIND_FIELD_IFELSE([$KSRC/include/net/genetlink.h],
                         [genl_multicast_group], [id])
@@ -534,6 +611,7 @@ AC_DEFUN([OVS_CHECK_LINUX_COMPAT], [
   OVS_GREP_IFELSE([$KSRC/include/net/ip6_route.h], [ip6_frag.*sock],
                   [OVS_DEFINE([HAVE_IP_FRAGMENT_TAKES_SOCK])])
 
+  OVS_GREP_IFELSE([$KSRC/include/net/netlink.h], [nla_put_64bit])
   OVS_GREP_IFELSE([$KSRC/include/net/netlink.h], [nla_get_be16])
   OVS_GREP_IFELSE([$KSRC/include/net/netlink.h], [nla_put_be16])
   OVS_GREP_IFELSE([$KSRC/include/net/netlink.h], [nla_put_be32])
@@ -556,21 +634,23 @@ AC_DEFUN([OVS_CHECK_LINUX_COMPAT], [
 
   OVS_GREP_IFELSE([$KSRC/include/net/vxlan.h], [struct vxlan_metadata],
                   [OVS_DEFINE([HAVE_VXLAN_METADATA])])
-  OVS_GREP_IFELSE([$KSRC/include/net/vxlan.h], [VXLAN_HF_RCO])
   OVS_GREP_IFELSE([$KSRC/include/net/udp.h], [udp_flow_src_port],
                   [OVS_GREP_IFELSE([$KSRC/include/net/udp.h], [inet_get_local_port_range(net],
                                    [OVS_DEFINE([HAVE_UDP_FLOW_SRC_PORT])])])
   OVS_GREP_IFELSE([$KSRC/include/net/udp.h], [udp_v4_check])
-  OVS_GREP_IFELSE([$KSRC/include/net/udp.h], [udp_set_csum])
   OVS_GREP_IFELSE([$KSRC/include/net/udp_tunnel.h], [udp_tunnel_gro_complete])
-  OVS_GREP_IFELSE([$KSRC/include/net/udp_tunnel.h], [ipv6_v6only],
-                  [OVS_DEFINE([HAVE_UDP_TUNNEL_IPV6])])
+  OVS_GREP_IFELSE([$KSRC/include/net/udp_tunnel.h], [sk_buff.*udp_tunnel_handle_offloads],
+                  [OVS_DEFINE([HAVE_UDP_TUNNEL_HANDLE_OFFLOAD_RET_SKB])])
+  OVS_FIND_FIELD_IFELSE([$KSRC/include/net/udp_tunnel.h], [udp_tunnel_sock_cfg],
+                        [gro_receive])
 
   OVS_GREP_IFELSE([$KSRC/include/linux/skbuff.h], [ignore_df],
                   [OVS_DEFINE([HAVE_IGNORE_DF_RENAME])])
   OVS_GREP_IFELSE([$KSRC/include/uapi/linux/netdevice.h], [NET_NAME_UNKNOWN],
                   [OVS_DEFINE([HAVE_NET_NAME_UNKNOWN])])
 
+  OVS_GREP_IFELSE([$KSRC/include/net/sock.h], [sk_no_check_tx])
+  OVS_GREP_IFELSE([$KSRC/include/linux/udp.h], [no_check6_tx])
   OVS_GREP_IFELSE([$KSRC/include/linux/utsrelease.h], [el6],
                   [OVS_DEFINE([HAVE_RHEL6_PER_CPU])])
 

@@ -49,7 +49,7 @@ extern "C" {
  *      create multiple netdev_rxq objects for a single netdev and access each
  *      of those from a different thread.)
  *
- *    NETDEV_FOR_EACH_QUEUE
+ *    NETDEV_QUEUE_FOR_EACH
  *    netdev_queue_dump_next()
  *    netdev_queue_dump_done()
  *
@@ -149,7 +149,7 @@ int netdev_rxq_drain(struct netdev_rxq *);
 
 /* Packet transmission. */
 int netdev_send(struct netdev *, int qid, struct dp_packet_batch *,
-                bool may_steal);
+                bool may_steal, bool concurrent_txq);
 void netdev_send_wait(struct netdev *, int qid);
 
 /* native tunnel APIs */

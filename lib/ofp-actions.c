@@ -22,7 +22,7 @@
 #include "colors.h"
 #include "compiler.h"
 #include "dummy.h"
-#include "hmap.h"
+#include "openvswitch/hmap.h"
 #include "learn.h"
 #include "multipath.h"
 #include "nx-match.h"
@@ -196,8 +196,8 @@ enum ofp_raw_action_type {
     /* NX1.0(4), OF1.1+(21): uint32_t. */
     OFPAT_RAW_SET_QUEUE,
 
-    /* OF1.1+(22): uint32_t. */
-    OFPAT_RAW11_GROUP,
+    /* NX1.0(40), OF1.1+(22): uint32_t. */
+    OFPAT_RAW_GROUP,
 
     /* OF1.1+(23): uint8_t. */
     OFPAT_RAW11_SET_NW_TTL,
@@ -289,6 +289,8 @@ enum ofp_raw_action_type {
 
     /* NX1.0+(29): struct nx_action_sample. */
     NXAST_RAW_SAMPLE,
+    /* NX1.0+(38): struct nx_action_sample2. */
+    NXAST_RAW_SAMPLE2,
 
     /* NX1.0+(34): struct nx_action_conjunction. */
     NXAST_RAW_CONJUNCTION,
@@ -298,6 +300,9 @@ enum ofp_raw_action_type {
 
     /* NX1.0+(36): struct nx_action_nat, ... */
     NXAST_RAW_NAT,
+
+    /* NX1.0+(39): struct nx_action_output_trunc. */
+    NXAST_RAW_OUTPUT_TRUNC,
 
 /* ## ------------------ ## */
 /* ## Debugging actions. ## */
@@ -351,6 +356,9 @@ static enum ofperr ofpacts_verify(const struct ofpact[], size_t ofpacts_len,
 static void ofpact_put_set_field(struct ofpbuf *openflow, enum ofp_version,
                                  enum mf_field_id, uint64_t value);
 
+static void put_reg_load(struct ofpbuf *openflow,
+                         const struct mf_subfield *, uint64_t value);
+
 static enum ofperr ofpact_pull_raw(struct ofpbuf *, enum ofp_version,
                                    enum ofp_raw_action_type *, uint64_t *arg);
 static void *ofpact_put_raw(struct ofpbuf *, enum ofp_version,
@@ -379,6 +387,7 @@ ofpact_next_flattened(const struct ofpact *ofpact)
     case OFPACT_CONTROLLER:
     case OFPACT_ENQUEUE:
     case OFPACT_OUTPUT_REG:
+    case OFPACT_OUTPUT_TRUNC:
     case OFPACT_BUNDLE:
     case OFPACT_SET_FIELD:
     case OFPACT_SET_VLAN_VID:
@@ -536,6 +545,40 @@ encode_OUTPUT(const struct ofpact_output *output,
 }
 
 static char * OVS_WARN_UNUSED_RESULT
+parse_truncate_subfield(struct ofpact_output_trunc *output_trunc,
+                        const char *arg_)
+{
+    char *key, *value;
+    char *arg = CONST_CAST(char *, arg_);
+
+    while (ofputil_parse_key_value(&arg, &key, &value)) {
+        if (!strcmp(key, "port")) {
+            if (!ofputil_port_from_string(value, &output_trunc->port)) {
+                return xasprintf("output to unknown truncate port: %s",
+                                  value);
+            }
+            if (ofp_to_u16(output_trunc->port) > ofp_to_u16(OFPP_MAX)) {
+                if (output_trunc->port != OFPP_LOCAL &&
+                    output_trunc->port != OFPP_IN_PORT)
+                return xasprintf("output to unsupported truncate port: %s",
+                                 value);
+            }
+        } else if (!strcmp(key, "max_len")) {
+            char *err;
+
+            err = str_to_u32(value, &output_trunc->max_len);
+            if (err) {
+                return err;
+            }
+        } else {
+            return xasprintf("invalid key '%s' in output_trunc argument",
+                                key);
+        }
+    }
+    return NULL;
+}
+
+static char * OVS_WARN_UNUSED_RESULT
 parse_OUTPUT(const char *arg, struct ofpbuf *ofpacts,
              enum ofputil_protocol *usable_protocols OVS_UNUSED)
 {
@@ -545,6 +588,11 @@ parse_OUTPUT(const char *arg, struct ofpbuf *ofpacts,
         output_reg = ofpact_put_OUTPUT_REG(ofpacts);
         output_reg->max_len = UINT16_MAX;
         return mf_parse_subfield(&output_reg->src, arg);
+    } else if (strstr(arg, "port") && strstr(arg, "max_len")) {
+        struct ofpact_output_trunc *output_trunc;
+
+        output_trunc = ofpact_put_OUTPUT_TRUNC(ofpacts);
+        return parse_truncate_subfield(output_trunc, arg);
     } else {
         struct ofpact_output *output;
 
@@ -574,7 +622,7 @@ format_OUTPUT(const struct ofpact_output *a, struct ds *s)
 /* Group actions. */
 
 static enum ofperr
-decode_OFPAT_RAW11_GROUP(uint32_t group_id,
+decode_OFPAT_RAW_GROUP(uint32_t group_id,
                          enum ofp_version ofp_version OVS_UNUSED,
                          struct ofpbuf *out)
 {
@@ -586,11 +634,7 @@ static void
 encode_GROUP(const struct ofpact_group *group,
              enum ofp_version ofp_version, struct ofpbuf *out)
 {
-    if (ofp_version == OFP10_VERSION) {
-        /* XXX */
-    } else {
-        put_OFPAT11_GROUP(out, group->group_id);
-    }
+    put_OFPAT_GROUP(out, ofp_version, group->group_id);
 }
 
 static char * OVS_WARN_UNUSED_RESULT
@@ -949,7 +993,13 @@ encode_ENQUEUE(const struct ofpact_enqueue *enqueue,
         oae->port = htons(ofp_to_u16(enqueue->port));
         oae->queue_id = htonl(enqueue->queue);
     } else {
-        /* XXX */
+        put_OFPAT_SET_QUEUE(out, ofp_version, enqueue->queue);
+
+        struct ofp11_action_output *oao = put_OFPAT11_OUTPUT(out);
+        oao->port = ofputil_port_to_ofp11(enqueue->port);
+        oao->max_len = OVS_BE16_MAX;
+
+        put_NXAST_POP_QUEUE(out);
     }
 }
 
@@ -1257,7 +1307,7 @@ decode_bundle(bool load, const struct nx_action_bundle *nab,
     }
 
     for (i = 0; i < bundle->n_slaves; i++) {
-        uint16_t ofp_port = ntohs(((ovs_be16 *)(nab + 1))[i]);
+        ofp_port_t ofp_port = u16_to_ofp(ntohs(((ovs_be16 *)(nab + 1))[i]));
         ofpbuf_put(ofpacts, &ofp_port, sizeof ofp_port);
         bundle = ofpacts->header;
     }
@@ -1866,7 +1916,9 @@ encode_SET_IP_ECN(const struct ofpact_ecn *ip_ecn,
 {
     uint8_t ecn = ip_ecn->ecn;
     if (ofp_version == OFP10_VERSION) {
-        /* XXX */
+        struct mf_subfield dst = { .field = mf_from_id(MFF_IP_ECN),
+                                   .ofs = 0, .n_bits = 2 };
+        put_reg_load(out, &dst, ecn);
     } else if (ofp_version == OFP11_VERSION) {
         put_OFPAT11_SET_NW_ECN(out, ecn);
     } else {
@@ -1918,7 +1970,9 @@ encode_SET_IP_TTL(const struct ofpact_ip_ttl *ttl,
     if (ofp_version >= OFP11_VERSION) {
         put_OFPAT11_SET_NW_TTL(out, ttl->ttl);
     } else {
-        /* XXX */
+        struct mf_subfield dst = { .field = mf_from_id(MFF_IP_TTL),
+                                   .ofs = 0, .n_bits = 8 };
+        put_reg_load(out, &dst, ttl->ttl);
     }
 }
 
@@ -2557,6 +2611,18 @@ ofpact_put_set_field(struct ofpbuf *openflow, enum ofp_version ofp_version,
     pad_ofpat(openflow, start_ofs);
 }
 
+static void
+put_reg_load(struct ofpbuf *openflow,
+             const struct mf_subfield *dst, uint64_t value)
+{
+    ovs_assert(dst->n_bits <= 64);
+
+    struct nx_action_reg_load *narl = put_NXAST_REG_LOAD(openflow);
+    narl->ofs_nbits = nxm_encode_ofs_nbits(dst->ofs, dst->n_bits);
+    narl->dst = htonl(mf_nxm_header(dst->field->id));
+    narl->value = htonll(value);
+}
+
 static bool
 next_load_segment(const struct ofpact_set_field *sf,
                   struct mf_subfield *dst, uint64_t *value)
@@ -2601,10 +2667,7 @@ set_field_to_nxast(const struct ofpact_set_field *sf, struct ofpbuf *openflow)
 
         dst.ofs = dst.n_bits = 0;
         while (next_load_segment(sf, &dst, &value)) {
-            struct nx_action_reg_load *narl = put_NXAST_REG_LOAD(openflow);
-            narl->ofs_nbits = nxm_encode_ofs_nbits(dst.ofs, dst.n_bits);
-            narl->dst = htonl(mf_nxm_header(dst.field->id));
-            narl->value = htonll(value);
+            put_reg_load(openflow, &dst, value);
         }
     }
 }
@@ -2710,6 +2773,10 @@ set_field_to_legacy_openflow(const struct ofpact_set_field *sf,
 
     case MFF_IP_DSCP_SHIFTED:
         put_OFPAT_SET_NW_TOS(out, ofp_version, sf->value.u8 << 2);
+        break;
+
+    case MFF_IP_ECN:
+        put_OFPAT11_SET_NW_ECN(out, sf->value.u8);
         break;
 
     case MFF_TCP_SRC:
@@ -4697,6 +4764,24 @@ struct nx_action_sample {
 };
 OFP_ASSERT(sizeof(struct nx_action_sample) == 24);
 
+/* Action structure for NXAST_SAMPLE2.
+ *
+ * This replacement for NXAST_SAMPLE makes it support exporting
+ * egress tunnel information. */
+struct nx_action_sample2 {
+    ovs_be16 type;                  /* OFPAT_VENDOR. */
+    ovs_be16 len;                   /* Length is 32. */
+    ovs_be32 vendor;                /* NX_VENDOR_ID. */
+    ovs_be16 subtype;               /* NXAST_SAMPLE. */
+    ovs_be16 probability;           /* Fraction of packets to sample. */
+    ovs_be32 collector_set_id;      /* ID of collector set in OVSDB. */
+    ovs_be32 obs_domain_id;         /* ID of sampling observation domain. */
+    ovs_be32 obs_point_id;          /* ID of sampling observation point. */
+    ovs_be16 sampling_port;         /* Sampling port. */
+    uint8_t  pad[6];                /* Pad to a multiple of 8 bytes */
+ };
+ OFP_ASSERT(sizeof(struct nx_action_sample2) == 32);
+
 static enum ofperr
 decode_NXAST_RAW_SAMPLE(const struct nx_action_sample *nas,
                         enum ofp_version ofp_version OVS_UNUSED,
@@ -4705,10 +4790,35 @@ decode_NXAST_RAW_SAMPLE(const struct nx_action_sample *nas,
     struct ofpact_sample *sample;
 
     sample = ofpact_put_SAMPLE(out);
+    sample->ofpact.raw = NXAST_RAW_SAMPLE;
     sample->probability = ntohs(nas->probability);
     sample->collector_set_id = ntohl(nas->collector_set_id);
     sample->obs_domain_id = ntohl(nas->obs_domain_id);
     sample->obs_point_id = ntohl(nas->obs_point_id);
+    /* Default value for sampling port is OFPP_NONE */
+    sample->sampling_port = OFPP_NONE;
+
+    if (sample->probability == 0) {
+        return OFPERR_OFPBAC_BAD_ARGUMENT;
+    }
+
+    return 0;
+}
+
+static enum ofperr
+decode_NXAST_RAW_SAMPLE2(const struct nx_action_sample2 *nas,
+                         enum ofp_version ofp_version OVS_UNUSED,
+                         struct ofpbuf *out)
+{
+    struct ofpact_sample *sample;
+
+    sample = ofpact_put_SAMPLE(out);
+    sample->ofpact.raw = NXAST_RAW_SAMPLE2;
+    sample->probability = ntohs(nas->probability);
+    sample->collector_set_id = ntohl(nas->collector_set_id);
+    sample->obs_domain_id = ntohl(nas->obs_domain_id);
+    sample->obs_point_id = ntohl(nas->obs_point_id);
+    sample->sampling_port = u16_to_ofp(ntohs(nas->sampling_port));
 
     if (sample->probability == 0) {
         return OFPERR_OFPBAC_BAD_ARGUMENT;
@@ -4721,13 +4831,21 @@ static void
 encode_SAMPLE(const struct ofpact_sample *sample,
               enum ofp_version ofp_version OVS_UNUSED, struct ofpbuf *out)
 {
-    struct nx_action_sample *nas;
-
-    nas = put_NXAST_SAMPLE(out);
-    nas->probability = htons(sample->probability);
-    nas->collector_set_id = htonl(sample->collector_set_id);
-    nas->obs_domain_id = htonl(sample->obs_domain_id);
-    nas->obs_point_id = htonl(sample->obs_point_id);
+    if (sample->ofpact.raw == NXAST_RAW_SAMPLE2
+        || sample->sampling_port != OFPP_NONE) {
+        struct nx_action_sample2 *nas = put_NXAST_SAMPLE2(out);
+        nas->probability = htons(sample->probability);
+        nas->collector_set_id = htonl(sample->collector_set_id);
+        nas->obs_domain_id = htonl(sample->obs_domain_id);
+        nas->obs_point_id = htonl(sample->obs_point_id);
+        nas->sampling_port = htons(ofp_to_u16(sample->sampling_port));
+    } else {
+        struct nx_action_sample *nas = put_NXAST_SAMPLE(out);
+        nas->probability = htons(sample->probability);
+        nas->collector_set_id = htonl(sample->collector_set_id);
+        nas->obs_domain_id = htonl(sample->obs_domain_id);
+        nas->obs_point_id = htonl(sample->obs_point_id);
+    }
 }
 
 /* Parses 'arg' as the argument to a "sample" action, and appends such an
@@ -4740,8 +4858,9 @@ parse_SAMPLE(char *arg, struct ofpbuf *ofpacts,
              enum ofputil_protocol *usable_protocols OVS_UNUSED)
 {
     struct ofpact_sample *os = ofpact_put_SAMPLE(ofpacts);
-    char *key, *value;
+    os->sampling_port = OFPP_NONE;
 
+    char *key, *value;
     while (ofputil_parse_key_value(&arg, &key, &value)) {
         char *error = NULL;
 
@@ -4756,6 +4875,10 @@ parse_SAMPLE(char *arg, struct ofpbuf *ofpacts,
             error = str_to_u32(value, &os->obs_domain_id);
         } else if (!strcmp(key, "obs_point_id")) {
             error = str_to_u32(value, &os->obs_point_id);
+        } else if (!strcmp(key, "sampling_port")) {
+            if (!ofputil_port_from_string(value, &os->sampling_port)) {
+                error = xasprintf("%s: unknown port", value);
+            }
         } else {
             error = xasprintf("invalid key \"%s\" in \"sample\" argument",
                               key);
@@ -4767,6 +4890,7 @@ parse_SAMPLE(char *arg, struct ofpbuf *ofpacts,
     if (os->probability == 0) {
         return xstrdup("non-zero \"probability\" must be specified on sample");
     }
+
     return NULL;
 }
 
@@ -4776,13 +4900,17 @@ format_SAMPLE(const struct ofpact_sample *a, struct ds *s)
     ds_put_format(s, "%ssample(%s%sprobability=%s%"PRIu16
                   ",%scollector_set_id=%s%"PRIu32
                   ",%sobs_domain_id=%s%"PRIu32
-                  ",%sobs_point_id=%s%"PRIu32"%s)%s",
+                  ",%sobs_point_id=%s%"PRIu32,
                   colors.paren, colors.end,
                   colors.param, colors.end, a->probability,
                   colors.param, colors.end, a->collector_set_id,
                   colors.param, colors.end, a->obs_domain_id,
-                  colors.param, colors.end, a->obs_point_id,
-                  colors.paren, colors.end);
+                  colors.param, colors.end, a->obs_point_id);
+    if (a->sampling_port != OFPP_NONE) {
+        ds_put_format(s, ",%ssampling_port=%s%"PRIu16,
+                      colors.param, colors.end, a->sampling_port);
+    }
+    ds_put_format(s, "%s)%s", colors.paren, colors.end);
 }
 
 /* debug_recirc instruction. */
@@ -5540,6 +5668,61 @@ parse_NAT(char *arg, struct ofpbuf *ofpacts,
     return NULL;
 }
 
+/* Truncate output action. */
+struct nx_action_output_trunc {
+    ovs_be16 type;              /* OFPAT_VENDOR. */
+    ovs_be16 len;               /* At least 16. */
+    ovs_be32 vendor;            /* NX_VENDOR_ID. */
+    ovs_be16 subtype;           /* NXAST_OUTPUT_TRUNC. */
+    ovs_be16 port;              /* Output port */
+    ovs_be32 max_len;           /* Truncate packet to size bytes */
+};
+OFP_ASSERT(sizeof(struct nx_action_output_trunc) == 16);
+
+static enum ofperr
+decode_NXAST_RAW_OUTPUT_TRUNC(const struct nx_action_output_trunc *natrc,
+                            enum ofp_version ofp_version OVS_UNUSED,
+                            struct ofpbuf *out)
+{
+    struct ofpact_output_trunc *output_trunc;
+
+    output_trunc = ofpact_put_OUTPUT_TRUNC(out);
+    output_trunc->max_len = ntohl(natrc->max_len);
+    output_trunc->port = u16_to_ofp(ntohs(natrc->port));
+
+    if (output_trunc->max_len < ETH_HEADER_LEN) {
+        return OFPERR_OFPBAC_BAD_ARGUMENT;
+    }
+    return 0;
+}
+
+static void
+encode_OUTPUT_TRUNC(const struct ofpact_output_trunc *output_trunc,
+                  enum ofp_version ofp_version OVS_UNUSED,
+                  struct ofpbuf *out)
+{
+    struct nx_action_output_trunc *natrc = put_NXAST_OUTPUT_TRUNC(out);
+
+    natrc->max_len = htonl(output_trunc->max_len);
+    natrc->port = htons(ofp_to_u16(output_trunc->port));
+}
+
+static char * OVS_WARN_UNUSED_RESULT
+parse_OUTPUT_TRUNC(const char *arg, struct ofpbuf *ofpacts OVS_UNUSED,
+                 enum ofputil_protocol *usable_protocols OVS_UNUSED)
+{
+    /* Disable output_trunc parsing.  Expose as output(port=N,max_len=M) and
+     * reuse parse_OUTPUT to parse output_trunc action. */
+    return xasprintf("unknown action %s", arg);
+}
+
+static void
+format_OUTPUT_TRUNC(const struct ofpact_output_trunc *a, struct ds *s)
+{
+     ds_put_format(s, "%soutput%s(port=%"PRIu16",max_len=%"PRIu32")",
+                   colors.special, colors.end, a->port, a->max_len);
+}
+
 
 /* Meter instruction. */
 
@@ -5934,6 +6117,7 @@ ofpact_is_set_or_move_action(const struct ofpact *a)
     case OFPACT_NOTE:
     case OFPACT_OUTPUT:
     case OFPACT_OUTPUT_REG:
+    case OFPACT_OUTPUT_TRUNC:
     case OFPACT_POP_MPLS:
     case OFPACT_POP_QUEUE:
     case OFPACT_PUSH_MPLS:
@@ -5962,6 +6146,7 @@ ofpact_is_allowed_in_actions_set(const struct ofpact *a)
     case OFPACT_DEC_TTL:
     case OFPACT_GROUP:
     case OFPACT_OUTPUT:
+    case OFPACT_OUTPUT_TRUNC:
     case OFPACT_POP_MPLS:
     case OFPACT_PUSH_MPLS:
     case OFPACT_PUSH_VLAN:
@@ -6186,6 +6371,7 @@ ovs_instruction_type_from_ofpact_type(enum ofpact_type type)
     case OFPACT_CONTROLLER:
     case OFPACT_ENQUEUE:
     case OFPACT_OUTPUT_REG:
+    case OFPACT_OUTPUT_TRUNC:
     case OFPACT_BUNDLE:
     case OFPACT_SET_VLAN_VID:
     case OFPACT_SET_VLAN_PCP:
@@ -6613,6 +6799,10 @@ ofpact_check__(enum ofputil_protocol *usable_protocols, struct ofpact *a,
 
     case OFPACT_OUTPUT_REG:
         return mf_check_src(&ofpact_get_OUTPUT_REG(a)->src, flow);
+
+    case OFPACT_OUTPUT_TRUNC:
+        return ofpact_check_output_port(ofpact_get_OUTPUT_TRUNC(a)->port,
+                                        max_ports);
 
     case OFPACT_BUNDLE:
         return bundle_check(ofpact_get_BUNDLE(a), max_ports, flow);
@@ -7291,6 +7481,7 @@ ofpact_outputs_to_port(const struct ofpact *ofpact, ofp_port_t port)
         return port == OFPP_CONTROLLER;
 
     case OFPACT_OUTPUT_REG:
+    case OFPACT_OUTPUT_TRUNC:
     case OFPACT_BUNDLE:
     case OFPACT_SET_VLAN_VID:
     case OFPACT_SET_VLAN_PCP:
@@ -7441,7 +7632,6 @@ ofpacts_format(const struct ofpact *ofpacts, size_t ofpacts_len,
                 ds_put_char(string, ',');
             }
 
-            /* XXX write-actions */
             ofpact_format(a, string);
         }
     }

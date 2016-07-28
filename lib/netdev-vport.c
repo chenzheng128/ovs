@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2010, 2011, 2012, 2013, 2014 Nicira, Inc.
+ * Copyright (c) 2016 Red Hat, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,31 +28,22 @@
 #include <sys/ioctl.h>
 
 #include "byte-order.h"
-#include "csum.h"
 #include "daemon.h"
 #include "dirs.h"
 #include "dpif.h"
-#include "dp-packet.h"
-#include "openvswitch/dynamic-string.h"
-#include "flow.h"
-#include "hash.h"
-#include "hmap.h"
-#include "openvswitch/list.h"
+#include "netdev.h"
+#include "netdev-native-tnl.h"
 #include "netdev-provider.h"
 #include "netdev-vport-private.h"
-#include "odp-netlink.h"
-#include "dp-packet.h"
 #include "ovs-router.h"
 #include "packets.h"
 #include "poll-loop.h"
 #include "route-table.h"
-#include "shash.h"
+#include "smap.h"
 #include "socket-util.h"
-#include "netdev-native-tnl.h"
-#include "openvswitch/vlog.h"
 #include "unaligned.h"
 #include "unixctl.h"
-#include "util.h"
+#include "openvswitch/vlog.h"
 
 VLOG_DEFINE_THIS_MODULE(netdev_vport);
 
@@ -282,7 +274,7 @@ tunnel_check_status_change__(struct netdev_vport *netdev)
     if (ovs_router_lookup(route, iface, NULL, &gw)) {
         struct netdev *egress_netdev;
 
-        if (!netdev_open(iface, "system", &egress_netdev)) {
+        if (!netdev_open(iface, NULL, &egress_netdev)) {
             status = netdev_get_carrier(egress_netdev);
             netdev_close(egress_netdev);
         }

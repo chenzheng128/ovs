@@ -149,23 +149,30 @@ def do_parse_schema(schema_string):
     print(ovs.json.to_string(schema.to_json(), sort_keys=True))
 
 
+def get_simple_table_printable_row(row):
+    simple_columns = ["i", "r", "b", "s", "u", "ia",
+                      "ra", "ba", "sa", "ua", "uuid"]
+    s = ""
+    for column in simple_columns:
+        if hasattr(row, column) and not (type(getattr(row, column))
+                                         is ovs.db.data.Atom):
+            s += "%s=%s " % (column, getattr(row, column))
+    s = s.strip()
+    s = re.sub('""|,|u?\'', "", s)
+    s = re.sub('UUID\(([^)]+)\)', r'\1', s)
+    s = re.sub('False', 'false', s)
+    s = re.sub('True', 'true', s)
+    s = re.sub(r'(ba)=([^[][^ ]*) ', r'\1=[\2] ', s)
+    return s
+
+
 def print_idl(idl, step):
     n = 0
     if "simple" in idl.tables:
-        simple_columns = ["i", "r", "b", "s", "u", "ia",
-                          "ra", "ba", "sa", "ua", "uuid"]
         simple = idl.tables["simple"].rows
         for row in six.itervalues(simple):
-            s = "%03d:" % step
-            for column in simple_columns:
-                if hasattr(row, column) and not (type(getattr(row, column))
-                                                 is ovs.db.data.Atom):
-                    s += " %s=%s" % (column, getattr(row, column))
-            s = re.sub('""|,|u?\'', "", s)
-            s = re.sub('UUID\(([^)]+)\)', r'\1', s)
-            s = re.sub('False', 'false', s)
-            s = re.sub('True', 'true', s)
-            s = re.sub(r'(ba)=([^[][^ ]*) ', r'\1=[\2] ', s)
+            s = "%03d: " % step
+            s += get_simple_table_printable_row(row)
             print(s)
             n += 1
 
@@ -391,8 +398,36 @@ def idl_set(idl, commands, step):
     sys.stdout.flush()
 
 
+def update_condition(idl, commands):
+    commands = commands.split(";")
+    for command in commands:
+        command = command[len("condition "):]
+        if "add" in command:
+            add_cmd = True
+            command = command[len("add "):]
+        else:
+            add_cmd = False
+            command = command[len("remove "):]
+
+        command = command.split(" ")
+        if(len(command) != 2):
+            sys.stderr.write("Error parsong condition %s\n" % command)
+            sys.exit(1)
+
+        table = command[0]
+        cond = ovs.json.from_string(command[1])
+
+        idl.cond_change(table, add_cmd, cond)
+
+
 def do_idl(schema_file, remote, *commands):
     schema_helper = ovs.db.idl.SchemaHelper(schema_file)
+    track_notify = False
+
+    if commands and commands[0] == "track-notify":
+        commands = commands[1:]
+        track_notify = True
+
     if commands and commands[0].startswith("?"):
         readonly = {}
         for x in commands[0][1:].split("?"):
@@ -422,6 +457,30 @@ def do_idl(schema_file, remote, *commands):
     symtab = {}
     seqno = 0
     step = 0
+
+    def mock_notify(event, row, updates=None):
+        output = "%03d: " % step
+        output += "event:" + str(event) + ", row={"
+        output += get_simple_table_printable_row(row) + "}, updates="
+        if updates is None:
+            output += "None"
+        else:
+            output += "{" + get_simple_table_printable_row(updates) + "}"
+
+        output += '\n'
+        sys.stdout.write(output)
+        sys.stdout.flush()
+
+    if track_notify and "simple" in idl.tables:
+        idl.notify = mock_notify
+
+    commands = list(commands)
+    if len(commands) >= 1 and "condition" in commands[0]:
+        update_condition(idl, commands.pop(0))
+        sys.stdout.write("%03d: change conditions\n" % step)
+        sys.stdout.flush()
+        step += 1
+
     for command in commands:
         if command.startswith("+"):
             # The previous transaction didn't change anything.
@@ -446,6 +505,11 @@ def do_idl(schema_file, remote, *commands):
             sys.stdout.flush()
             step += 1
             idl.force_reconnect()
+        elif "condition" in command:
+            update_condition(idl, command)
+            sys.stdout.write("%03d: change conditions\n" % step)
+            sys.stdout.flush()
+            step += 1
         elif not command.startswith("["):
             idl_set(idl, command, step)
             step += 1

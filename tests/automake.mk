@@ -48,6 +48,7 @@ TESTSUITE_AT = \
 	tests/json.at \
 	tests/jsonrpc.at \
 	tests/jsonrpc-py.at \
+	tests/pmd.at \
 	tests/tunnel.at \
 	tests/tunnel-push-pop.at \
 	tests/tunnel-push-pop-ipv6.at \
@@ -59,6 +60,7 @@ TESTSUITE_AT = \
 	tests/ofproto-dpif.at \
 	tests/bridge.at \
 	tests/ofproto.at \
+	tests/netdev-type.at \
 	tests/ovsdb.at \
 	tests/ovsdb-log.at \
 	tests/ovsdb-types.at \
@@ -74,9 +76,11 @@ TESTSUITE_AT = \
 	tests/ovsdb-execution.at \
 	tests/ovsdb-trigger.at \
 	tests/ovsdb-tool.at \
+	tests/ovsdb-replication.at \
 	tests/ovsdb-server.at \
 	tests/ovsdb-monitor.at \
 	tests/ovsdb-idl.at \
+	tests/ovsdb-lock.at \
 	tests/ovs-vsctl.at \
 	tests/ovs-monitor-ipsec.at \
 	tests/ovs-xapi-sync.at \
@@ -99,10 +103,12 @@ SYSTEM_KMOD_TESTSUITE_AT = \
 
 SYSTEM_USERSPACE_TESTSUITE_AT = \
 	tests/system-userspace-testsuite.at \
+	tests/system-ovn.at \
 	tests/system-userspace-macros.at
 
 SYSTEM_TESTSUITE_AT = \
 	tests/system-common-macros.at \
+	tests/system-ovn.at \
 	tests/system-traffic.at
 
 TESTSUITE = $(srcdir)/tests/testsuite
@@ -322,6 +328,7 @@ tests_ovstest_SOURCES = \
 	tests/test-classifier.c \
 	tests/test-ccmap.c \
 	tests/test-cmap.c \
+	tests/test-conntrack.c \
 	tests/test-csum.c \
 	tests/test-flows.c \
 	tests/test-hash.c \

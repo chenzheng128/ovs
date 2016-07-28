@@ -611,8 +611,20 @@ struct ip_header {
     ovs_16aligned_be32 ip_src;
     ovs_16aligned_be32 ip_dst;
 };
-
 BUILD_ASSERT_DECL(IP_HEADER_LEN == sizeof(struct ip_header));
+
+/* ICMPv4 types. */
+#define ICMP4_ECHO_REPLY 0
+#define ICMP4_DST_UNREACH 3
+#define ICMP4_SOURCEQUENCH 4
+#define ICMP4_REDIRECT 5
+#define ICMP4_ECHO_REQUEST 8
+#define ICMP4_TIME_EXCEEDED 11
+#define ICMP4_PARAM_PROB 12
+#define ICMP4_TIMESTAMP 13
+#define ICMP4_TIMESTAMPREPLY 14
+#define ICMP4_INFOREQUEST 15
+#define ICMP4_INFOREPLY 16
 
 #define ICMP_HEADER_LEN 8
 struct icmp_header {
@@ -834,11 +846,15 @@ BUILD_ASSERT_DECL(ND_OPT_LEN == sizeof(struct ovs_nd_opt));
 #define ND_MSG_LEN 24
 struct ovs_nd_msg {
     struct icmp6_header icmph;
-    ovs_16aligned_be32 rco_flags;
+    ovs_16aligned_be32 rso_flags;
     union ovs_16aligned_in6_addr target;
     struct ovs_nd_opt options[0];
 };
 BUILD_ASSERT_DECL(ND_MSG_LEN == sizeof(struct ovs_nd_msg));
+
+#define ND_RSO_ROUTER    0x80000000
+#define ND_RSO_SOLICITED 0x40000000
+#define ND_RSO_OVERRIDE  0x20000000
 
 /*
  * Use the same struct for MLD and MLD2, naming members as the defined fields in
@@ -976,6 +992,19 @@ in6_generate_lla(struct eth_addr ea, struct in6_addr *lla)
     taddr->be16[7] = ea.be16[2];
 }
 
+/* Returns true if 'addr' is a link local address.  Otherwise, false. */
+static inline bool
+in6_is_lla(struct in6_addr *addr)
+{
+#ifdef s6_addr32
+    return addr->s6_addr32[0] == htonl(0xfe800000) && !(addr->s6_addr32[1]);
+#else
+    return addr->s6_addr[0] == 0xfe && addr->s6_addr[1] == 0x80 &&
+         !(addr->s6_addr[2] | addr->s6_addr[3] | addr->s6_addr[4] |
+           addr->s6_addr[5] | addr->s6_addr[6] | addr->s6_addr[7]);
+#endif
+}
+
 static inline void
 ipv6_multicast_to_ethernet(struct eth_addr *eth, const struct in6_addr *ip6)
 {
@@ -1027,6 +1056,9 @@ void ipv6_format_masked(const struct in6_addr *addr,
 const char * ipv6_string_mapped(char *addr_str, const struct in6_addr *addr);
 struct in6_addr ipv6_addr_bitand(const struct in6_addr *src,
                                  const struct in6_addr *mask);
+struct in6_addr ipv6_addr_bitxor(const struct in6_addr *a,
+                                 const struct in6_addr *b);
+bool ipv6_is_zero(const struct in6_addr *a);
 struct in6_addr ipv6_create_mask(int mask);
 int ipv6_count_cidr_bits(const struct in6_addr *netmask);
 bool ipv6_is_cidr(const struct in6_addr *netmask);
@@ -1069,6 +1101,10 @@ void compose_arp(struct dp_packet *, uint16_t arp_op,
                  ovs_be32 arp_spa, ovs_be32 arp_tpa);
 void compose_nd(struct dp_packet *, const struct eth_addr eth_src,
                 struct in6_addr *, struct in6_addr *);
+void compose_na(struct dp_packet *,
+                const struct eth_addr eth_src, const struct eth_addr eth_dst,
+                const ovs_be32 ipv6_src[4], const ovs_be32 ipv6_dst[4],
+                ovs_be32 rso_flags);
 uint32_t packet_csum_pseudoheader(const struct ip_header *);
 void IP_ECN_set_ce(struct dp_packet *pkt, bool is_ipv6);
 

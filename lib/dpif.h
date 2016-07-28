@@ -784,6 +784,7 @@ struct dpif_upcall {
     size_t key_len;             /* Length of 'key' in bytes. */
     ovs_u128 ufid;              /* Unique flow identifier for 'key'. */
     struct nlattr *mru;         /* Maximum receive unit. */
+    struct nlattr *cutlen;      /* Number of bytes shrink from the end. */
 
     /* DPIF_UC_ACTION only. */
     struct nlattr *userdata;    /* Argument to OVS_ACTION_ATTR_USERSPACE. */
@@ -838,6 +839,7 @@ void dpif_register_upcall_cb(struct dpif *, upcall_callback *, void *aux);
 int dpif_recv_set(struct dpif *, bool enable);
 int dpif_handlers_set(struct dpif *, uint32_t n_handlers);
 int dpif_poll_threads_set(struct dpif *, const char *cmask);
+int dpif_port_set_config(struct dpif *, odp_port_t, const struct smap *cfg);
 int dpif_recv(struct dpif *, uint32_t handler_id, struct dpif_upcall *,
               struct ofpbuf *);
 void dpif_recv_purge(struct dpif *);

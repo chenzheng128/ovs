@@ -1,6 +1,6 @@
 #include <linux/version.h>
 
-#ifndef HAVE_UDP_SET_CSUM
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3,18,0)
 
 #include <net/udp.h>
 
@@ -26,12 +26,13 @@ void rpl_udp_set_csum(bool nocheck, struct sk_buff *skb,
 		skb->csum_offset = offsetof(struct udphdr, check);
 		uh->check = ~udp_v4_check(len, saddr, daddr, 0);
 	} else {
+		int l4_offset = skb_transport_offset(skb);
 		__wsum csum;
 
 		BUG_ON(skb->ip_summed == CHECKSUM_PARTIAL);
 
 		uh->check = 0;
-		csum = skb_checksum(skb, 0, len, 0);
+		csum = skb_checksum(skb, l4_offset, len, 0);
 		uh->check = udp_v4_check(len, saddr, daddr, csum);
 		if (uh->check == 0)
 			uh->check = CSUM_MANGLED_0;
@@ -42,3 +43,15 @@ void rpl_udp_set_csum(bool nocheck, struct sk_buff *skb,
 EXPORT_SYMBOL_GPL(rpl_udp_set_csum);
 
 #endif /* Linux version < 3.16 */
+
+#ifdef OVS_CHECK_UDP_TUNNEL_ZERO_CSUM
+void rpl_udp6_csum_zero_error(struct sk_buff *skb)
+{
+	/* RFC 2460 section 8.1 says that we SHOULD log
+	 * this error. Well, it is reasonable.
+	 */
+	net_dbg_ratelimited("IPv6: udp checksum is 0 for [%pI6c]:%u->[%pI6c]:%u\n",
+			&ipv6_hdr(skb)->saddr, ntohs(udp_hdr(skb)->source),
+			&ipv6_hdr(skb)->daddr, ntohs(udp_hdr(skb)->dest));
+}
+#endif

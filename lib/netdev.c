@@ -47,7 +47,7 @@
 #include "packets.h"
 #include "poll-loop.h"
 #include "seq.h"
-#include "shash.h"
+#include "openvswitch/shash.h"
 #include "smap.h"
 #include "sset.h"
 #include "svec.h"
@@ -339,7 +339,8 @@ netdev_open(const char *name, const char *type, struct netdev **netdevp)
     if (!netdev) {
         struct netdev_registered_class *rc;
 
-        rc = netdev_lookup_class(type && type[0] ? type : "system");
+        type = type && type[0] ? type : "system";
+        rc = netdev_lookup_class(type);
         if (rc && ovs_refcount_try_ref_rcu(&rc->refcnt)) {
             netdev = rc->class->alloc();
             if (netdev) {
@@ -376,6 +377,11 @@ netdev_open(const char *name, const char *type, struct netdev **netdevp)
                       name, type);
             error = EAFNOSUPPORT;
         }
+    } else if (type && strcmp(type, netdev_get_type(netdev))) {
+        VLOG_WARN("trying to create netdev %s of different type %s,"
+                  " already is %s\n",
+                  name, type, netdev_get_type(netdev));
+        error = EEXIST;
     } else {
         error = 0;
     }
@@ -608,14 +614,15 @@ netdev_rxq_close(struct netdev_rxq *rx)
     }
 }
 
-/* Attempts to receive a batch of packets from 'rx'.  'pkts' should point to
- * the beginning of an array of MAX_RX_BATCH pointers to dp_packet.  If
- * successful, this function stores pointers to up to MAX_RX_BATCH dp_packets
- * into the array, transferring ownership of the packets to the caller, stores
- * the number of received packets into '*cnt', and returns 0.
+/* Attempts to receive a batch of packets from 'rx'.  'batch' should point to
+ * the beginning of an array of NETDEV_MAX_BURST pointers to dp_packet.  If
+ * successful, this function stores pointers to up to NETDEV_MAX_BURST
+ * dp_packets into the array, transferring ownership of the packets to the
+ * caller, stores the number of received packets in 'batch->count', and returns
+ * 0.
  *
  * The implementation does not necessarily initialize any non-data members of
- * 'pkts'.  That is, the caller must initialize layer pointers and metadata
+ * 'batch'.  That is, the caller must initialize layer pointers and metadata
  * itself, if desired, e.g. with pkt_metadata_init() and miniflow_extract().
  *
  * Returns EAGAIN immediately if no packet is ready to be received or another
@@ -625,7 +632,7 @@ netdev_rxq_recv(struct netdev_rxq *rx, struct dp_packet_batch *batch)
 {
     int retval;
 
-    retval = rx->netdev->netdev_class->rxq_recv(rx, batch->packets, &batch->count);
+    retval = rx->netdev->netdev_class->rxq_recv(rx, batch);
     if (!retval) {
         COVERAGE_INC(netdev_received);
     } else {
@@ -655,9 +662,6 @@ netdev_rxq_drain(struct netdev_rxq *rx)
  * otherwise a positive errno value.
  *
  * 'n_txq' specifies the exact number of transmission queues to create.
- * If this function returns successfully, the caller can make 'n_txq'
- * concurrent calls to netdev_send() (each one with a different 'qid' in the
- * range [0..'n_txq'-1]).
  *
  * The change might not effective immediately.  The caller must check if a
  * reconfiguration is required with netdev_is_reconf_required() and eventually
@@ -681,7 +685,7 @@ netdev_set_tx_multiq(struct netdev *netdev, unsigned int n_txq)
     return error;
 }
 
-/* Sends 'buffers' on 'netdev'.  Returns 0 if successful (for every packet),
+/* Sends 'batch' on 'netdev'.  Returns 0 if successful (for every packet),
  * otherwise a positive errno value.  Returns EAGAIN without blocking if
  * at least one the packets cannot be queued immediately.  Returns EMSGSIZE
  * if a partial packet was transmitted or if a packet is too big or too small
@@ -694,6 +698,11 @@ netdev_set_tx_multiq(struct netdev *netdev, unsigned int n_txq)
  * If 'may_steal' is true, the caller transfers ownership of all the packets
  * to the network device, regardless of success.
  *
+ * If 'concurrent_txq' is true, the caller may perform concurrent calls
+ * to netdev_send() with the same 'qid'. The netdev provider is responsible
+ * for making sure that these concurrent calls do not create a race condition
+ * by using locking or other synchronization if required.
+ *
  * The network device is expected to maintain one or more packet
  * transmission queues, so that the caller does not ordinarily have to
  * do additional queuing of packets.  'qid' specifies the queue to use
@@ -704,18 +713,20 @@ netdev_set_tx_multiq(struct netdev *netdev, unsigned int n_txq)
  * cases this function will always return EOPNOTSUPP. */
 int
 netdev_send(struct netdev *netdev, int qid, struct dp_packet_batch *batch,
-            bool may_steal)
+            bool may_steal, bool concurrent_txq)
 {
     if (!netdev->netdev_class->send) {
         dp_packet_delete_batch(batch, may_steal);
         return EOPNOTSUPP;
     }
 
-    int error = netdev->netdev_class->send(netdev, qid,
-                                           batch->packets, batch->count,
-                                           may_steal);
+    int error = netdev->netdev_class->send(netdev, qid, batch, may_steal,
+                                           concurrent_txq);
     if (!error) {
         COVERAGE_INC(netdev_sent);
+        if (!may_steal) {
+            dp_packet_batch_reset_cutlen(batch);
+        }
     }
     return error;
 }

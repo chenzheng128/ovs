@@ -1,8 +1,16 @@
 {
     "name": "OVN_Southbound",
-    "version": "1.3.0",
-    "cksum": "654726257 5528",
+    "version": "1.7.0",
+    "cksum": "3677179333 6917",
     "tables": {
+        "SB_Global": {
+            "columns": {
+                "nb_cfg": {"type": {"key": "integer"}},
+                "external_ids": {
+                    "type": {"key": "string", "value": "string",
+                             "min": 0, "max": "unlimited"}}},
+            "maxRows": 1,
+            "isRoot": true},
         "Chassis": {
             "columns": {
                 "name": {"type": "string"},
@@ -13,6 +21,7 @@
                 "vtep_logical_switches" : {"type": {"key": "string",
                                                     "min": 0,
                                                     "max": "unlimited"}},
+                "nb_cfg": {"type": {"key": "integer"}},
                 "external_ids": {
                     "type": {"key": "string", "value": "string",
                              "min": 0, "max": "unlimited"}}},
@@ -28,6 +37,14 @@
                                      "min": 0,
                                      "max": "unlimited"}},
                 "ip": {"type": "string"}}},
+        "Address_Set": {
+            "columns": {
+                "name": {"type": "string"},
+                "addresses": {"type": {"key": "string",
+                                       "min": 0,
+                                       "max": "unlimited"}}},
+            "indexes": [["name"]],
+            "isRoot": true},
         "Logical_Flow": {
             "columns": {
                 "logical_datapath": {"type": {"key": {"type": "uuid",
@@ -108,6 +125,20 @@
             "columns": {
                 "logical_port": {"type": "string"},
                 "ip": {"type": "string"},
-                "mac": {"type": "string"}},
+                "mac": {"type": "string"},
+                "datapath": {"type": {"key": {"type": "uuid",
+                                              "refTable": "Datapath_Binding"}}}},
             "indexes": [["logical_port", "ip"]],
+            "isRoot": true},
+        "DHCP_Options": {
+            "columns": {
+                "name": {"type": "string"},
+                "code": {
+                    "type": {"key": {"type": "integer",
+                                     "minInteger": 0, "maxInteger": 254}}},
+                "type": {
+                    "type": {"key": {
+                        "type": "string",
+                        "enum": ["set", ["bool", "uint8", "uint16", "uint32",
+                                         "ipv4", "static_routes", "str"]]}}}},
             "isRoot": true}}}

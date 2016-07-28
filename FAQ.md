@@ -3,8 +3,22 @@ Frequently Asked Questions
 
 Open vSwitch <http://openvswitch.org>
 
-General
--------
+## Contents
+
+- [General](#general)
+- [Releases](#releases)
+- [Terminology](#terminology)
+- [Basic configuration](#basic-configuration)
+- [Implementation Details](#implementation-details)
+- [Performance](#performance)
+- [Configuration Problems](#configuration-problems)
+- [QOS](#qos)
+- [VLANs](#vlans)
+- [VXLANs](#vxlans)
+- [Using OpenFlow](#using-openflow)
+- [Development](#development)
+
+## General
 
 ### Q: What is Open vSwitch?
 
@@ -118,19 +132,20 @@ A: Starting in OVS 2.4, we switched the default ports to the
    cannot, all the programs allow overriding the default port.  See the
    appropriate man page.
 
-
-Releases
---------
+## Releases
 
 ### Q: What does it mean for an Open vSwitch release to be LTS (long-term support)?
 
 A: All official releases have been through a comprehensive testing
-   process and are suitable for production use.  Planned releases will
-   occur several times a year.  If a significant bug is identified in an
+   process and are suitable for production use.  Planned releases
+   occur twice a year.  If a significant bug is identified in an
    LTS release, we will provide an updated release that includes the
    fix.  Releases that are not LTS may not be fixed and may just be
    supplanted by the next major release.  The current LTS release is
    2.3.x.
+
+   For more information on the Open vSwitch release process, please
+   see [release-process.md].
 
 ### Q: What Linux kernel versions does each Open vSwitch release work with?
 
@@ -157,7 +172,7 @@ A: The following table lists the Linux kernel versions against which the
 |    2.3.x     | 2.6.32 to 3.14
 |    2.4.x     | 2.6.32 to 4.0
 |    2.5.x     | 2.6.32 to 4.3
-|    2.6.x     | 3.10 to 4.3
+|    2.6.x     | 3.10 to 4.6
 
    Open vSwitch userspace should also work with the Linux kernel module
    built into Linux 3.3 and later.
@@ -192,13 +207,16 @@ A: Open vSwitch supports different datapaths on different platforms.  Each
 
 Feature               | Linux upstream | Linux OVS tree | Userspace | Hyper-V |
 ----------------------|:--------------:|:--------------:|:---------:|:-------:|
-NAT                   |      4.6       |       NO       |    NO     |   NO    |
-Connection tracking   |      4.3       |       YES      |    NO     | PARTIAL |
+NAT                   |      4.6       |       YES      |    NO     |   NO    |
+Connection tracking   |      4.3       |       YES      |  PARTIAL  | PARTIAL |
 Tunnel - LISP         |      NO        |       YES      |    NO     |   NO    |
 Tunnel - STT          |      NO        |       YES      |    NO     |   YES   |
 Tunnel - GRE          |      3.11      |       YES      |    YES    |   YES   |
 Tunnel - VXLAN        |      3.12      |       YES      |    YES    |   YES   |
-Tunnel - Geneve       |      3.18      |       YES      |    YES    |   NO    |
+Tunnel - Geneve       |      3.18      |       YES      |    YES    |   YES   |
+Tunnel - GRE-IPv6     |      NO        |       NO       |    YES    |   NO    |
+Tunnel - VXLAN-IPv6   |      4.3       |       YES      |    YES    |   NO    |
+Tunnel - Geneve-IPv6  |      4.4       |       YES      |    YES    |   NO    |
 QoS - Policing        |      YES       |       YES      |    NO     |   NO    |
 QoS - Shaping         |      YES       |       YES      |    NO     |   NO    |
 sFlow                 |      YES       |       YES      |    YES    |   NO    |
@@ -350,8 +368,7 @@ A: Bridge compatibility was a feature of Open vSwitch 1.9 and earlier.
    the release.  Be sure to start the ovs-brcompatd daemon.
 
 
-Terminology
------------
+## Terminology
 
 ### Q: I thought Open vSwitch was a virtual Ethernet switch, but the documentation keeps talking about bridges.  What's a bridge?
 
@@ -363,9 +380,7 @@ A: In networking, the terms "bridge" and "switch" are synonyms.  Open
 
 A: See the "VLAN" section below.
 
-
-Basic Configuration
--------------------
+## Basic configuration
 
 ### Q: How do I configure a port as an access port?
 
@@ -572,9 +587,7 @@ A: First, why do you want to do this?  Two connected bridges are not
 A: Open vSwitch does not support such a configuration.
    Bridges always have their local ports.
 
-
-Implementation Details
-----------------------
+## Implementation Details
 
 ### Q: I hear OVS has a couple of kinds of flows.  Can you tell me about them?
 
@@ -664,9 +677,7 @@ A: No.  There are several reasons:
   please read "The Design and Implementation of Open vSwitch",
   published in USENIX NSDI 2015.
 
-
-Performance
------------
+## Performance
 
 ### Q: I just upgraded and I see a performance drop.  Why?
 
@@ -686,8 +697,7 @@ A: The OVS kernel datapath may have been updated to a newer version than
    userspace.
 
 
-Configuration Problems
-----------------------
+## Configuration Problems
 
 ### Q: I created a bridge and added my Ethernet port to it, using commands
    like these:
@@ -1042,8 +1052,7 @@ A: The short answer is that this is a misuse of a "tap" device.  Use
    type "system", the default, instead).
 
 
-Quality of Service (QoS)
-------------------------
+## QOS
 
 ### Q: Does OVS support Quality of Service (QoS)?
 
@@ -1056,7 +1065,7 @@ A: Yes.  For traffic that egresses from a switch, OVS supports traffic
 
    Keep in mind that ingress and egress are from the perspective of the
    switch.  That means that egress shaping limits the rate at which
-   traffic is allowed to transmit from a physical interface, but the
+   traffic is allowed to transmit from a physical interface, but not the
    rate at which traffic will be received on a virtual machine's VIF.
    For ingress policing, the behavior is the opposite.
 
@@ -1199,9 +1208,7 @@ A: Since version 2.0, Open vSwitch has OpenFlow protocol support for
    vSwitch software switch (neither the kernel-based nor userspace
    switches).
 
-
-VLANs
------
+## VLANs
 
 ### Q: What's a VLAN?
 
@@ -1474,8 +1481,7 @@ A: Open vSwitch implements Independent VLAN Learning (IVL) for
    for each VLANs.
 
 
-VXLANs
------
+## VXLANs
 
 ### Q: What's a VXLAN?
 
@@ -1509,8 +1515,7 @@ A: By default, Open vSwitch will use the assigned IANA port for VXLAN, which
        options:dst_port=8472
 
 
-Using OpenFlow (Manually or Via Controller)
--------------------------------------------
+## Using OpenFlow
 
 ### Q: What versions of OpenFlow does Open vSwitch support?
 
@@ -2012,9 +2017,66 @@ A: In Open vSwitch 2.3 and earlier, Open vSwitch used the destination
    vSwitch source tree.  (OpenFlow 1.5 support in Open vSwitch is still
    experimental.)
 
+### Q: I added a flow to accept packets on VLAN 123 and output them on
+   VLAN 456, like so:
 
-Development
------------
+       ovs-ofctl add-flow br0 dl_vlan=123,actions=output:1,mod_vlan_vid:456
+
+   but the packets are actually being output in VLAN 123.  Why?
+
+A: OpenFlow actions are executed in the order specified.  Thus, the
+   actions above first output the packet, then change its VLAN.  Since
+   the output occurs before changing the VLAN, the change in VLAN will
+   have no visible effect.
+
+   To solve this and similar problems, order actions so that changes
+   to headers happen before output, e.g.:
+
+       ovs-ofctl add-flow br0 dl_vlan=123,actions=mod_vlan_vid:456,output:1
+
+### Q: The "learn" action can't learn the action I want, can you improve it?
+
+A: By itself, the "learn" action can only put two kinds of actions
+   into the flows that it creates: "load" and "output" actions.  If
+   "learn" is used in isolation, these are severe limits.
+
+   However, "learn" is not meant to be used in isolation.  It is a
+   primitive meant to be used together with other Open vSwitch
+   features to accomplish a task.  Its existing features are enough to
+   accomplish most tasks.
+
+   Here is an outline of a typical pipeline structure that allows for
+   versatile behavior using "learn":
+
+     - Flows in table A contain a "learn" action, that populates flows
+       in table L, that use a "load" action to populate register R
+       with information about what was learned.
+
+     - Flows in table B contain two sequential resubmit actions: one
+       to table L and another one to table B+1.
+
+     - Flows in table B+1 match on register R and act differently
+       depending on what the flows in table L loaded into it.
+
+   This approach can be used to implement many "learn"-based features.
+   For example:
+
+     - Resubmit to a table selected based on learned information, e.g. see:
+       http://openvswitch.org/pipermail/discuss/2016-June/021694.html
+
+     - MAC learning in the middle of a pipeline, as described in
+       [Tutorial.md].
+
+     - TCP state based firewalling, by learning outgoing connections
+       based on SYN packets and matching them up with incoming
+       packets.
+
+     - At least some of the features described in T. A. Hoff,
+       "Extending Open vSwitch to Facilitate Creation of Stateful SDN
+       Applications".
+
+
+## Development
 
 ### Q: How do I implement a new OpenFlow message?
 
@@ -2078,3 +2140,5 @@ http://openvswitch.org/
 [INSTALL.md]:INSTALL.md
 [OPENFLOW-1.1+.md]:OPENFLOW-1.1+.md
 [INSTALL.DPDK.md]:INSTALL.DPDK.md
+[Tutorial.md]:tutorial/Tutorial.md
+[release-process.md]:Documentation/release-process.md

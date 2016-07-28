@@ -26,12 +26,13 @@
 #include "openvswitch/ofp-actions.h"
 #include "openvswitch/ofpbuf.h"
 #include "openvswitch/vlog.h"
-#include "ovn/lib/actions.h"
-#include "ovn/lib/expr.h"
-#include "ovn/lib/lex.h"
+#include "ovn/actions.h"
+#include "ovn/expr.h"
+#include "ovn/lex.h"
+#include "ovn/lib/ovn-dhcp.h"
 #include "ovs-thread.h"
 #include "ovstest.h"
-#include "shash.h"
+#include "openvswitch/shash.h"
 #include "simap.h"
 #include "util.h"
 
@@ -142,8 +143,11 @@ create_symtab(struct shash *symtab)
     /* Reserve a pair of registers for the logical inport and outport.  A full
      * 32-bit register each is bigger than we need, but the expression code
      * doesn't yet support string fields that occupy less than a full OXM. */
-    expr_symtab_add_string(symtab, "inport", MFF_REG6, NULL);
-    expr_symtab_add_string(symtab, "outport", MFF_REG7, NULL);
+    expr_symtab_add_string(symtab, "inport", MFF_REG14, NULL);
+    expr_symtab_add_string(symtab, "outport", MFF_REG15, NULL);
+
+    expr_symtab_add_field(symtab, "xxreg0", MFF_XXREG0, NULL, false);
+    expr_symtab_add_field(symtab, "xxreg1", MFF_XXREG1, NULL, false);
 
     expr_symtab_add_field(symtab, "xreg0", MFF_XREG0, NULL, false);
     expr_symtab_add_field(symtab, "xreg1", MFF_XREG1, NULL, false);
@@ -239,6 +243,54 @@ create_symtab(struct shash *symtab)
     expr_symtab_add_string(symtab, "big_string", MFF_XREG0, NULL);
 }
 
+static void
+create_dhcp_opts(struct hmap *dhcp_opts)
+{
+    hmap_init(dhcp_opts);
+    dhcp_opt_add(dhcp_opts, "offerip", 0, "ipv4");
+    dhcp_opt_add(dhcp_opts, "netmask", 1, "ipv4");
+    dhcp_opt_add(dhcp_opts, "router",  3, "ipv4");
+    dhcp_opt_add(dhcp_opts, "dns_server", 6, "ipv4");
+    dhcp_opt_add(dhcp_opts, "log_server", 7, "ipv4");
+    dhcp_opt_add(dhcp_opts, "lpr_server",  9, "ipv4");
+    dhcp_opt_add(dhcp_opts, "domain", 15, "str");
+    dhcp_opt_add(dhcp_opts, "swap_server", 16, "ipv4");
+    dhcp_opt_add(dhcp_opts, "policy_filter", 21, "ipv4");
+    dhcp_opt_add(dhcp_opts, "router_solicitation",  32, "ipv4");
+    dhcp_opt_add(dhcp_opts, "nis_server", 41, "ipv4");
+    dhcp_opt_add(dhcp_opts, "ntp_server", 42, "ipv4");
+    dhcp_opt_add(dhcp_opts, "server_id",  54, "ipv4");
+    dhcp_opt_add(dhcp_opts, "tftp_server", 66, "ipv4");
+    dhcp_opt_add(dhcp_opts, "classless_static_route", 121, "static_routes");
+    dhcp_opt_add(dhcp_opts, "ip_forward_enable",  19, "bool");
+    dhcp_opt_add(dhcp_opts, "router_discovery", 31, "bool");
+    dhcp_opt_add(dhcp_opts, "ethernet_encap", 36, "bool");
+    dhcp_opt_add(dhcp_opts, "default_ttl",  23, "uint8");
+    dhcp_opt_add(dhcp_opts, "tcp_ttl", 37, "uint8");
+    dhcp_opt_add(dhcp_opts, "mtu", 26, "uint16");
+    dhcp_opt_add(dhcp_opts, "lease_time",  51, "uint32");
+}
+
+static void
+create_macros(struct shash *macros)
+{
+    shash_init(macros);
+
+    static const char *const addrs1[] = {
+        "10.0.0.1", "10.0.0.2", "10.0.0.3",
+    };
+    static const char *const addrs2[] = {
+        "::1", "::2", "::3",
+    };
+    static const char *const addrs3[] = {
+        "00:00:00:00:00:01", "00:00:00:00:00:02", "00:00:00:00:00:03",
+    };
+
+    expr_macros_add(macros, "set1", addrs1, 3);
+    expr_macros_add(macros, "set2", addrs2, 3);
+    expr_macros_add(macros, "set3", addrs3, 3);
+}
+
 static bool
 lookup_port_cb(const void *ports_, const char *port_name, unsigned int *portp)
 {
@@ -255,10 +307,12 @@ static void
 test_parse_expr__(int steps)
 {
     struct shash symtab;
+    struct shash macros;
     struct simap ports;
     struct ds input;
 
     create_symtab(&symtab);
+    create_macros(&macros);
 
     simap_init(&ports);
     simap_put(&ports, "eth0", 5);
@@ -270,7 +324,7 @@ test_parse_expr__(int steps)
         struct expr *expr;
         char *error;
 
-        expr = expr_parse_string(ds_cstr(&input), &symtab, &error);
+        expr = expr_parse_string(ds_cstr(&input), &symtab, &macros, &error);
         if (!error && steps > 0) {
             expr = expr_annotate(expr, &symtab, &error);
         }
@@ -307,6 +361,8 @@ test_parse_expr__(int steps)
     simap_destroy(&ports);
     expr_symtab_destroy(&symtab);
     shash_destroy(&symtab);
+    expr_macros_destroy(&macros);
+    shash_destroy(&macros);
 }
 
 static void
@@ -451,7 +507,7 @@ test_evaluate_expr(struct ovs_cmdl_context *ctx)
         struct expr *expr;
         char *error;
 
-        expr = expr_parse_string(ds_cstr(&input), &symtab, &error);
+        expr = expr_parse_string(ds_cstr(&input), &symtab, NULL, &error);
         if (!error) {
             expr = expr_annotate(expr, &symtab, &error);
         }
@@ -925,7 +981,7 @@ test_tree_shape_exhaustively(struct expr *expr, struct shash *symtab,
             expr_format(expr, &s);
 
             char *error;
-            modified = expr_parse_string(ds_cstr(&s), symtab, &error);
+            modified = expr_parse_string(ds_cstr(&s), symtab, NULL, &error);
             if (error) {
                 fprintf(stderr, "%s fails to parse (%s)\n",
                         ds_cstr(&s), error);
@@ -1221,10 +1277,19 @@ static void
 test_parse_actions(struct ovs_cmdl_context *ctx OVS_UNUSED)
 {
     struct shash symtab;
+    struct hmap dhcp_opts;
     struct simap ports, ct_zones;
     struct ds input;
 
     create_symtab(&symtab);
+    create_dhcp_opts(&dhcp_opts);
+
+    /* Initialize group ids. */
+    struct group_table group_table;
+    group_table.group_ids = bitmap_allocate(MAX_OVN_GROUPS);
+    bitmap_set1(group_table.group_ids, 0); /* Group id 0 is invalid. */
+    hmap_init(&group_table.desired_groups);
+    hmap_init(&group_table.existing_groups);
 
     simap_init(&ports);
     simap_put(&ports, "eth0", 5);
@@ -1242,9 +1307,11 @@ test_parse_actions(struct ovs_cmdl_context *ctx OVS_UNUSED)
 
         struct action_params ap = {
             .symtab = &symtab,
+            .dhcp_opts = &dhcp_opts,
             .lookup_port = lookup_port_cb,
             .aux = &ports,
             .ct_zones = &ct_zones,
+            .group_table = &group_table,
 
             .n_tables = 16,
             .first_ptable = 16,

@@ -20,6 +20,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include "compiler.h"
+#include "openvswitch/hmap.h"
+#include "openvswitch/dynamic-string.h"
 #include "util.h"
 
 struct expr;
@@ -27,6 +29,22 @@ struct lexer;
 struct ofpbuf;
 struct shash;
 struct simap;
+
+#define MAX_OVN_GROUPS 65535
+
+struct group_table {
+    unsigned long *group_ids;  /* Used as a bitmap with value set
+                                * for allocated group ids in either
+                                * desired_groups or existing_groups. */
+    struct hmap desired_groups;
+    struct hmap existing_groups;
+};
+
+struct group_info {
+    struct hmap_node hmap_node;
+    struct ds group;
+    uint32_t group_id;
+};
 
 enum action_opcode {
     /* "arp { ...actions... }".
@@ -44,6 +62,22 @@ enum action_opcode {
      *     MFF_ETH_SRC = mac
      */
     ACTION_OPCODE_PUT_ARP,
+
+    /* "result = put_dhcp_opts(offer_ip, option, ...)".
+     *
+     * Arguments follow the action_header, in this format:
+     *   - A 32-bit or 64-bit OXM header designating the result field.
+     *   - A 32-bit integer specifying a bit offset within the result field.
+     *   - The 32-bit DHCP offer IP.
+     *   - Any number of DHCP options.
+     */
+    ACTION_OPCODE_PUT_DHCP_OPTS,
+
+    /* "na { ...actions... }".
+     *
+     * The actions, in OpenFlow 1.3 format, follow the action_header.
+     */
+    ACTION_OPCODE_NA,
 };
 
 /* Header. */
@@ -58,6 +92,9 @@ struct action_params {
      * expr_parse()). */
     const struct shash *symtab;
 
+    /* hmap of 'struct dhcp_opts_map'  to support 'put_dhcp_opts' action */
+    const struct hmap *dhcp_opts;
+
     /* Looks up logical port 'port_name'.  If found, stores its port number in
      * '*portp' and returns true; otherwise, returns false. */
     bool (*lookup_port)(const void *aux, const char *port_name,
@@ -66,6 +103,9 @@ struct action_params {
 
     /* A map from a port name to its connection tracking zone. */
     const struct simap *ct_zones;
+
+    /* A struct to figure out the group_id for group actions. */
+    struct group_table *group_table;
 
     /* OVN maps each logical flow table (ltable), one-to-one, onto a physical
      * OpenFlow flow table (ptable).  A number of parameters describe this

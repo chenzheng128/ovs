@@ -34,7 +34,7 @@
 #include "openvswitch/dynamic-string.h"
 #include "fatal-signal.h"
 #include "hash.h"
-#include "json.h"
+#include "openvswitch/json.h"
 #include "ovsdb-data.h"
 #include "ovsdb-idl.h"
 #include "poll-loop.h"
@@ -107,7 +107,7 @@ static void do_vsctl(const char *args, struct ctl_command *, size_t n,
  * either store a positive values on successful implementing the new
  * interface, or -1 on failure.
  *
- * Unless -no-wait command line option is specified,
+ * Unless --no-wait command line option is specified,
  * post_db_reload_do_checks() is called right after any configuration
  * changes is picked up (i.e. reload) by ovs-vswitchd. Any error detected
  * post OVSDB reload is reported as ovs-vsctl errors. OVS-vswitchd logs
@@ -287,7 +287,7 @@ parse_options(int argc, char *argv[], struct shash *local_options)
             }
             shash_add_nocopy(local_options,
                              xasprintf("--%s", options[idx].name),
-                             optarg ? xstrdup(optarg) : NULL);
+                             nullable_xstrdup(optarg));
             break;
 
         case 'h':
@@ -2348,7 +2348,9 @@ static const struct ctl_table_class tables[] = {
       {NULL, NULL, NULL}}},
 
     {&ovsrec_table_flow_sample_collector_set,
-     {{NULL, NULL, NULL},
+     {{&ovsrec_table_flow_sample_collector_set,
+       &ovsrec_flow_sample_collector_set_col_id,
+       NULL},
       {NULL, NULL, NULL}}},
 
     {NULL, {{NULL, NULL, NULL}, {NULL, NULL, NULL}}}

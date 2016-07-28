@@ -1,4 +1,4 @@
-/* Copyright (c) 2009, 2010, 2011, 2012, 2013, 2014, 2015 Nicira, Inc.
+/* Copyright (c) 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016 Nicira, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -38,6 +38,9 @@
 #include <stdint.h>
 #include "compiler.h"
 #include "ovsdb-types.h"
+#include "ovsdb-data.h"
+#include "openvswitch/list.h"
+#include "ovsdb-condition.h"
 
 struct json;
 struct ovsdb_datum;
@@ -45,6 +48,7 @@ struct ovsdb_idl_class;
 struct ovsdb_idl_row;
 struct ovsdb_idl_column;
 struct ovsdb_idl_table_class;
+struct ovsdb_idl_condition;
 struct uuid;
 
 struct ovsdb_idl *ovsdb_idl_create(const char *remote,
@@ -61,6 +65,7 @@ void ovsdb_idl_set_lock(struct ovsdb_idl *, const char *lock_name);
 bool ovsdb_idl_has_lock(const struct ovsdb_idl *);
 bool ovsdb_idl_is_lock_contended(const struct ovsdb_idl *);
 
+const struct uuid  * ovsdb_idl_get_monitor_id(const struct ovsdb_idl *);
 unsigned int ovsdb_idl_get_seqno(const struct ovsdb_idl *);
 bool ovsdb_idl_has_ever_connected(const struct ovsdb_idl *);
 void ovsdb_idl_enable_reconnect(struct ovsdb_idl *);
@@ -290,6 +295,14 @@ struct ovsdb_idl_loop {
     unsigned int precommit_seqno;
 
     struct ovsdb_idl_txn *open_txn;
+
+    /* These members allow a client a simple, stateless way to keep track of
+     * transactions that commit: when a transaction commits successfully,
+     * ovsdb_idl_loop_commit_and_wait() copies 'next_cfg' to 'cur_cfg'.  Thus,
+     * the client can set 'next_cfg' to a value that indicates a successful
+     * commit and check 'cur_cfg' on each iteration. */
+    int64_t cur_cfg;
+    int64_t next_cfg;
 };
 
 #define OVSDB_IDL_LOOP_INITIALIZER(IDL) { .idl = (IDL) }
@@ -297,5 +310,30 @@ struct ovsdb_idl_loop {
 void ovsdb_idl_loop_destroy(struct ovsdb_idl_loop *);
 struct ovsdb_idl_txn *ovsdb_idl_loop_run(struct ovsdb_idl_loop *);
 void ovsdb_idl_loop_commit_and_wait(struct ovsdb_idl_loop *);
+
+struct ovsdb_idl_condition {
+    const struct ovsdb_idl_table_class *tc;
+    struct ovs_list clauses;
+};
+
+struct ovsdb_idl_clause {
+    struct ovs_list node;
+    enum ovsdb_function function;
+    const struct ovsdb_idl_column *column;
+    struct ovsdb_datum arg;
+};
+
+void ovsdb_idl_condition_reset(struct ovsdb_idl *idl,
+                               const struct ovsdb_idl_table_class *tc);
+void ovsdb_idl_condition_add_clause(struct ovsdb_idl *idl,
+                                    const struct ovsdb_idl_table_class *tc,
+                                    enum ovsdb_function function,
+                                    const struct ovsdb_idl_column *column,
+                                    struct ovsdb_datum *arg);
+void ovsdb_idl_condition_remove_clause(struct ovsdb_idl *idl,
+                                       const struct ovsdb_idl_table_class *tc,
+                                       enum ovsdb_function function,
+                                       const struct ovsdb_idl_column *column,
+                                       struct ovsdb_datum *arg);
 
 #endif /* ovsdb-idl.h */
