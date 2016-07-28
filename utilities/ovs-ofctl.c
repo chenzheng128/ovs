@@ -403,7 +403,7 @@ usage(void)
            "  --rsort[=field]             sort in descending order\n"
            "  --unixctl=SOCKET            set control socket name\n"
            "  -h, --help                  display this help message\n"
-           "  -V, --version               display version information\n");
+           "  -V, --version (CUC)         display version information\n");
     exit(EXIT_SUCCESS);
 }
 
