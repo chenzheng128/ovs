@@ -130,7 +130,46 @@ main(int argc, char *argv[])
     fatal_ignore_sigpipe();
     ctx.argc = argc - optind;
     ctx.argv = argv + optind;
+
+    // set_allowed_ofp_versions("OpenFlow13");
+
+    // Usage:
+    //   add ecn only; # add match flow
+    //   add and del;  # add match flow and delete
+    int queue_min = 0;
+    char sub_command[32];
+    queue_min = 50000;
+    // sscanf(ctx.argv[1], "%d", queue_min);
+    strcpy(sub_command, ctx.argv[2]);
+    printf("debug: reading input min=%d cmd=%s \n" , queue_min, sub_command);
+
+
+    // CUC flow ecn
+    run_mycmd_add_delete(ctx, sub_command);
+
+    return 0;
+}
+
+int run_mycmd_add_delete(struct ovs_cmdl_context ctx, char* sub_command){
+    printf("*** ovs-ecn excute add-flow and remove-flows \n");
+    // argv[0]: add-flow argv[1]: s1
+    // s1 command 3 - remove-flows
+    // argv[0]: remove-flows argv[1]: s1
+    // add-flow
+    ctx.argv[0]="add-flow"; ctx.argv[1]="s1";
+    ctx.argv[2]="tcp,nw_dst=10.0.0.3, actions=mod_nw_ecn:3, resubmit(,1)";
+    printf ("%s %s\n", ctx.argv[0], ctx.argv[2]);
     ovs_cmdl_run_command(&ctx, get_all_commands());
+
+    // ofctl_flow_mod(ctx.argc, ctx.argv, OFPFC_ADD);
+    // del-flows
+    if (strcmp(sub_command, "del") == 0){
+        ctx.argv[0]="del-flows"; ctx.argv[1]="s1";
+        ctx.argv[2]="tcp,nw_dst=10.0.0.3";
+        // ofctl_flow_mod(ctx.argc, ctx.argv, strict ? OFPFC_DELETE_STRICT : OFPFC_DELETE);
+        printf ("%s %s\n", ctx.argv[0], ctx.argv[2]);
+        ovs_cmdl_run_command(&ctx, get_all_commands());
+    }
     return 0;
 }
 
@@ -1280,6 +1319,14 @@ ofctl_flow_mod(int argc, char *argv[], uint16_t command)
     if (argc > 2 && !strcmp(argv[2], "-")) {
         ofctl_flow_mod_file(argc, argv, command);
     } else {
+        // CUC 3
+        // printf ("argc: %d command %d ", argc, command );
+        // s1 command 0 - add-flow
+        // argv[0]: add-flow argv[1]: s1
+        // s1 command 3 - remove-flows
+        // argv[0]: remove-flows argv[1]: s1
+        // printf ("argv[0]: %s argv[1]: %s %s", argv[0], argv[1], argv[2]);
+
         struct ofputil_flow_mod fm;
         char *error;
         enum ofputil_protocol usable_protocols;
