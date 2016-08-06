@@ -65,6 +65,12 @@
 #include "meta-flow.h"
 #include "sort.h"
 
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+
 VLOG_DEFINE_THIS_MODULE(ofctl);
 
 /* --bundle: Use OpenFlow 1.4 bundle for making the flow table change atomic.
@@ -137,20 +143,116 @@ main(int argc, char *argv[])
     //   add ecn only; # add match flow
     //   add and del;  # add match flow and delete
     int queue_min = 0;
-    char sub_command[32];
+    char sub_command0[32];
+    char sub_command1[32];
+    char sub_command2[32];
     queue_min = 50000;
     // sscanf(ctx.argv[1], "%d", queue_min);
-    strcpy(sub_command, ctx.argv[2]);
-    printf("debug: reading input min=%d cmd=%s \n" , queue_min, sub_command);
+    strcpy(sub_command0, ctx.argv[0]);
+    strcpy(sub_command1, ctx.argv[1]);
+    strcpy(sub_command2, ctx.argv[2]);
+    printf("debug: reading input min=%d cmd=% %s %s \n" , queue_min, sub_command0, sub_command1, sub_command2);
 
 
-    // CUC flow ecn
-    run_mycmd_add_delete(ctx, sub_command);
+    // CUC flow ecn excute only once
+    if (strcmp(sub_command0, "once") == 0){
+        char *p;
+        int num = strtol(sub_command1, &p, 10);
+        printf("debug: once filter_interval=%d\n" , num);
+        run_mycmd_add_delete(ctx, num, sub_command2);
+        return 0;
+    }
+
+    if (strcmp(sub_command0, "once_back") == 0){
+        char *p;
+        int num = strtol(sub_command1, &p, 10);
+        printf("debug: once back filter_interval=%d\n" , num);
+        run_mycmd_back_add_delete(ctx, num, sub_command2);
+        return 0;
+    }
+
+
+    char *socket_path = "/var/sdn/ecn.socket";
+
+    struct sockaddr_un addr;
+    char buf[1024];
+    int fd,rc;
+
+    if ( (fd = socket(AF_UNIX, SOCK_STREAM, 0)) == -1) {
+      perror("socket error");
+      exit(-1);
+    }
+
+    memset(&addr, 0, sizeof(addr));
+    addr.sun_family = AF_UNIX;
+    if (*socket_path == '\0') {
+      *addr.sun_path = '\0';
+      strncpy(addr.sun_path+1, socket_path+1, sizeof(addr.sun_path)-2);
+    } else {
+      strncpy(addr.sun_path, socket_path, sizeof(addr.sun_path)-1);
+    }
+
+    printf ("debug: connet on socket_path: %s\n", socket_path);
+    if (connect(fd, (struct sockaddr*)&addr, sizeof(addr)) == -1) {
+      perror("connect error");
+      exit(-1);
+    }
+
+    int readcount = 0;
+    while(1) {
+      printf("please input your command:\t");
+      fflush(stdout);
+      if ((rc=read(STDIN_FILENO, buf, sizeof(buf))) <= 0) break;
+      if (write(fd, buf, rc) != rc) {
+        if (rc > 0) fprintf(stderr,"partial write");
+        else {
+          perror("write error");
+          exit(-1);
+        }
+      }
+      if ((readcount=read(fd,buf,sizeof(buf))) > 0){
+            // %.*s 表示打印buf 的 readcount 长度; 如果不设定readcount长度直接打印 %s;
+            // 就应该调用后面的 memset 对buf 清零,
+            // 而是会因为buf中的字符不会结束在 \0 而打印出一些剩余内容否则
+          printf("server echo %u bytes: \t\t%.*s", readcount, readcount, buf);
+      }
+      memset(&buf, 0, sizeof(buf)); //每次结束时注意清零buf, 便于字符串正常结束
+
+    }
+
+
+
 
     return 0;
 }
 
-int run_mycmd_add_delete(struct ovs_cmdl_context ctx, char* sub_command){
+int run_mycmd_back_add_delete(struct ovs_cmdl_context ctx, int filter_interval, char* sub_command){
+    printf("*** ovs-ecn excute add-flow and remove-flows \n");
+    // argv[0]: add-flow argv[1]: s1
+    // s1 command 3 - remove-flows
+    // argv[0]: remove-flows argv[1]: s1
+    // add-flow
+    
+    ctx.argv[0]="add-flow"; ctx.argv[1]="s1";
+    ctx.argv[2]="tcp,nw_dst=10.0.0.2, actions=mod_tp_dst:1, resubmit(,1)";
+    printf ("%s %s\n", ctx.argv[0], ctx.argv[2]);
+    ovs_cmdl_run_command(&ctx, get_all_commands());
+
+    // ofctl_flow_mod(ctx.argc, ctx.argv, OFPFC_ADD);
+    // del-flows
+    if (strcmp(sub_command, "del") == 0){
+        ctx.argv[0]="del-flows"; ctx.argv[1]="s1";
+        ctx.argv[2]="tcp,nw_dst=10.0.0.2";
+        // ofctl_flow_mod(ctx.argc, ctx.argv, strict ? OFPFC_DELETE_STRICT : OFPFC_DELETE);
+        if (filter_interval > 0)
+            usleep(filter_interval);
+        printf ("%s %s\n", ctx.argv[0], ctx.argv[2]);
+        ovs_cmdl_run_command(&ctx, get_all_commands());
+    }
+    return 0;
+}
+
+int run_mycmd_add_delete(struct ovs_cmdl_context ctx, int filter_interval, char* sub_command){
     printf("*** ovs-ecn excute add-flow and remove-flows \n");
     // argv[0]: add-flow argv[1]: s1
     // s1 command 3 - remove-flows
@@ -167,6 +269,8 @@ int run_mycmd_add_delete(struct ovs_cmdl_context ctx, char* sub_command){
         ctx.argv[0]="del-flows"; ctx.argv[1]="s1";
         ctx.argv[2]="tcp,nw_dst=10.0.0.3";
         // ofctl_flow_mod(ctx.argc, ctx.argv, strict ? OFPFC_DELETE_STRICT : OFPFC_DELETE);
+        if (filter_interval > 0)
+            usleep(filter_interval);
         printf ("%s %s\n", ctx.argv[0], ctx.argv[2]);
         ovs_cmdl_run_command(&ctx, get_all_commands());
     }

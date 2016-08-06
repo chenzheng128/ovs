@@ -2340,6 +2340,6 @@ static void dp_cleanup(void)
 module_init(dp_init);
 module_exit(dp_cleanup);
 
-MODULE_DESCRIPTION("Open vSwitch switching datapath");
+MODULE_DESCRIPTION("Open vSwitch switching datapath (CUC v0.3)");
 MODULE_LICENSE("GPL");
 MODULE_VERSION(VERSION);

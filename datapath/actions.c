@@ -506,8 +506,9 @@ static int set_ipv6(struct sk_buff *skb, struct sw_flow_key *flow_key,
 static void set_tp_port(struct sk_buff *skb, __be16 *port,
 			__be16 new_port, __sum16 *check)
 {
-	inet_proto_csum_replace2(check, skb, *port, new_port, 0);
-	*port = new_port;
+	// inet_proto_csum_replace2(check, skb, *port, new_port, 0);
+	// *port = new_port;
+	printk (KERN_EMERG "disable set_tp_port\n");
 }
 
 static int set_udp(struct sk_buff *skb, struct sw_flow_key *flow_key,
