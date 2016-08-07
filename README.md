@@ -1,10 +1,37 @@
 
 # ZHCHEN 开发分支
 
-## TODO 基于 fakeroot编译方法
-DEB_BUILD_OPTIONS="parallel=2 nocheck" fakeroot debian/rules binary
+
 
 ## 基于源代码make开发方法
+
+### 自定义 ovs-ofctl 工具编译开发
+```
+vi ./utilities/ovs-ofctl.c  # 修改源文件, 增加自定义提示
+make  # 编译
+./utilities/ovs-ofctl --help    #查看新版本运行效果
+```
+
+### openvswitch.ko 内核编译与开发
+将相关内核文件复制到 ./linux-header 中, 便于查看
+
+```
+# 单次编译
+./configure --with-linux='/lib/modules/`uname -r`/build' && make -C datapath/linux
+
+# 反复编译并挂载
+ make && cp /opt/coding/ovs/datapath/linux/openvswitch.ko /lib/modules/3.13.0-86-generic/updates/dkms/openvswitch.ko && rmmod openvswitch && modprobe -v openvswitch && modinfo openvswitch
+
+# 重新挂载后需重启交换机, 并增加流表
+ovs-rc-vswitchd.sh restart && ovsdb-rc.sh restart
+ovs-ofctl -O Openflow13 add-flow s1 "tcp,nw_dst=10.0.0.2, actions=mod_tp_dst:1,resubmit(,1)"
+
+# 触发测试流
+mininet> h2 netperf -H h3 -l 120
+
+# 查看内核日志, 并关闭测试流
+dmesg && pkill netperf
+ ```
 
 ### 初始编译
 ```
@@ -12,12 +39,14 @@ sudo -s
 #从 git 下拉 ecn240 分支时可不需要新建
 #git checkout v2.4.0 -b ecn240 # 新建ecn开发分支  -b v240rev(hailong分支)
 git checkout v2.4.0 -b ecn240 # v240rev(hailong)
+
 ./boot.sh # 如出现 libtoolize: can not copy `/usr/share/aclocal/lt~obsolete.m4' to `m4/' 错误则运行autoreconf —install (去掉 —force 参数)
 #重编译时需要 make clean && make distclean
 ./configure # 自编译文件默认安装 到 /usr/local/bin下 (—prefx )
 # 不要用 make -j 参数多进程编译, 容易报错
 make  && make install
 # make modules_install # 这样编译的内核可能会有问题 跳过内核安装，用mininet install.sh / fakeroot来编译安装内核
+
 #复制配置文件
 cp /etc/openvswitch/conf.db /usr/local/etc/openvswitch/conf.db
 ovs-vswitchd & #启动交换机
@@ -27,13 +56,11 @@ ovs-vsctl show  #查看交换机状态
 #0b8ed0aa-67ac-4405-af13-70249a7e8a96
 # ovs_version: "2.4.0"
 
-```
-### 代码开发
-```
-vi ./utilities/ovs-ofctl.c  # 修改源文件, 增加自定义提示
-make  # 编译
-./utilities/ovs-ofctl --help    #查看新版本运行效果
-```
+
+
+## TODO 基于 fakeroot编译方法
+DEB_BUILD_OPTIONS="parallel=2 nocheck" fakeroot debian/rules binary
+
 
 
 Open vSwitch

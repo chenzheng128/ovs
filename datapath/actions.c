@@ -506,9 +506,10 @@ static int set_ipv6(struct sk_buff *skb, struct sw_flow_key *flow_key,
 static void set_tp_port(struct sk_buff *skb, __be16 *port,
 			__be16 new_port, __sum16 *check)
 {
-	// inet_proto_csum_replace2(check, skb, *port, new_port, 0);
-	// *port = new_port;
-	printk (KERN_EMERG "disable set_tp_port\n");
+	inet_proto_csum_replace2(check, skb, *port, new_port, 0);
+	*port = new_port;
+	// printk (KERN_INFO "set_tp_port() disable set_tp_port\n");
+
 }
 
 static int set_udp(struct sk_buff *skb, struct sw_flow_key *flow_key,
@@ -570,13 +571,55 @@ static int set_tcp(struct sk_buff *skb, struct sw_flow_key *flow_key,
 
 	src = MASKED(th->source, key->tcp_src, mask->tcp_src);
 	if (likely(src != th->source)) {
+		// printk (KERN_DEBUG "set_tcp(src) th_size=%u \n", sizeof(&th));
 		set_tp_port(skb, &th->source, src, &th->check);
 		flow_key->tp.src = src;
 	}
+	/*
+	*
+	root # demsg
+	sizeof(&th)=8
+
+	*/
+
 	dst = MASKED(th->dest, key->tcp_dst, mask->tcp_dst);
 	if (likely(dst != th->dest)) {
-		set_tp_port(skb, &th->dest, dst, &th->check);
-		flow_key->tp.dst = dst;
+
+		/*
+		// dst 和 mod_tp_dst:10 的对应关系为 高8个字节
+		// mod_tp_dst -> dst
+		// 11 -> 2816
+		// 10 -> 2560
+		// 09 -> 2304
+		*/
+		int mod_tp_dst = dst / 256;
+		printk (KERN_DEBUG "mod_tp_dst = %d\n", mod_tp_dst);
+		if (mod_tp_dst >= 10) {
+			//对 10 以上的端口进行原始修改端口逻辑处理
+			//添加测试流表 ovs-ofctl -O Openflow13 add-flow s1 "tcp,nw_dst=10.0.0.2, actions=mod_tp_dst:10,resubmit(,1)"
+			// %hu unsigned short for __u16 port
+			printk (KERN_DEBUG "mod_tp_dst >= 10 exec original mod_tp_dst from %hu to %hu\n", th->dest, mod_tp_dst);
+
+			set_tp_port(skb, &th->dest, dst, &th->check);
+			flow_key->tp.dst = dst;
+		}
+		else if (mod_tp_dst == 0 || mod_tp_dst == 1){
+			//添加测试流表 ovs-ofctl -O Openflow13 add-flow s1 "tcp,nw_dst=10.0.0.2, actions=mod_tp_dst:1,resubmit(,1)"
+			//if (mod_tp_dst == 1)
+			th->ece = mod_tp_dst;
+			printk (KERN_INFO "set_tcp(ece) tcp.ece=%u \n", th->ece);
+		}
+		else { //if (mod_tp_dst == 9){ // 端口 9-3 用于INFO 打印调试日志
+			/*
+			[34345.846738] set_tcp(dest) dest=3291 source=16690
+			[34345.846798] set_tcp(ece)--> th ece=0 ack=1
+			[34345.846799] set_tcp(ece)<-- th ece=1 ack=1
+			*/
+			printk (KERN_INFO "info: set_tcp(dest) dest=%d source=%d\n", th->dest, th->source);
+			printk (KERN_INFO "info: set_tcp(ece) before --> th ece=%u ack=%u \n", th->ece, th->ack);
+			th->ece = 1;
+			printk (KERN_INFO "info: set_tcp(ece) after <-- th ece=%u ack=%u \n", th->ece, th->ack);
+		}
 	}
 	skb_clear_hash(skb);
 
