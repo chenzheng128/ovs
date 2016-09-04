@@ -140,8 +140,8 @@ main(int argc, char *argv[])
     // set_allowed_ofp_versions("OpenFlow13");
 
     // Usage:
-    //   add ecn only; # add match flow
-    //   add and del;  # add match flow and delete
+    //   ecn <> only; # add match flow
+    //   ecn <> del;  # add match flow and delete
     int queue_min = 0;
     char sub_command0[32];
     char sub_command1[32];
@@ -155,19 +155,19 @@ main(int argc, char *argv[])
 
 
     // CUC flow ecn excute only once
-    if (strcmp(sub_command0, "once") == 0){
+    if (strcmp(sub_command0, "ecn_ip") == 0){
         char *p;
         int num = strtol(sub_command1, &p, 10);
-        printf("debug: once filter_interval=%d\n" , num);
-        run_mycmd_add_delete(ctx, num, sub_command2);
+        printf("debug: ecn_ip filter_interval=%d\n" , num);
+        run_ecn_ip_add_delete(ctx, num, sub_command2);
         return 0;
     }
 
-    if (strcmp(sub_command0, "once_back") == 0){
+    if (strcmp(sub_command0, "ecn_tcp") == 0){
         char *p;
         int num = strtol(sub_command1, &p, 10);
-        printf("debug: once back filter_interval=%d\n" , num);
-        run_mycmd_back_add_delete(ctx, num, sub_command2);
+        printf("debug: ecn_tcp filter_interval=%d\n" , num);
+        run_ecn_tcp_add_delete(ctx, num, sub_command2);
         return 0;
     }
 
@@ -226,13 +226,13 @@ main(int argc, char *argv[])
     return 0;
 }
 
-int run_mycmd_back_add_delete(struct ovs_cmdl_context ctx, int filter_interval, char* sub_command){
+int run_ecn_tcp_add_delete(struct ovs_cmdl_context ctx, int filter_interval, char* sub_command){
     printf("*** ovs-ecn excute add-flow and remove-flows \n");
     // argv[0]: add-flow argv[1]: s1
     // s1 command 3 - remove-flows
     // argv[0]: remove-flows argv[1]: s1
     // add-flow
-    
+
     ctx.argv[0]="add-flow"; ctx.argv[1]="s1";
     ctx.argv[2]="tcp,nw_dst=10.0.0.2, actions=mod_tp_dst:1, resubmit(,1)";
     printf ("%s %s\n", ctx.argv[0], ctx.argv[2]);
@@ -252,7 +252,7 @@ int run_mycmd_back_add_delete(struct ovs_cmdl_context ctx, int filter_interval, 
     return 0;
 }
 
-int run_mycmd_add_delete(struct ovs_cmdl_context ctx, int filter_interval, char* sub_command){
+int run_ecn_ip_add_delete(struct ovs_cmdl_context ctx, int filter_interval, char* sub_command){
     printf("*** ovs-ecn excute add-flow and remove-flows \n");
     // argv[0]: add-flow argv[1]: s1
     // s1 command 3 - remove-flows

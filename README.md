@@ -1,6 +1,22 @@
 
 # ZHCHEN 开发分支
 
+### 自定义 ovs-ofctl 工具使用
+
+下发 ecn_ip 过滤策略 (用于取代 red AQM)
+```
+./utilities/ovs-ofctl ecn_ip <filter_interval> <del | nodel>
+```
+下发我们的 ecn_tcp 过滤策略
+```
+ ./utilities/ovs-ofctl ecn_tcp <filter_interval> <del | nodel>
+   filter_interval: 过滤间隔, 时间越长, 下发删除策略越久, 过滤包越多
+   del  下发策略后并删除
+   nodel 仅下发策略
+
+例子:
+ ./utilities/ovs-ofctl ecn_ip 500000000 del
+```
 
 
 ## 基于源代码make开发方法
